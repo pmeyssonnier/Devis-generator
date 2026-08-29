@@ -581,3 +581,158 @@ def test_surcouche_rend_un_bloc_python_collable():
     assert '"mur de refend": "cloison",' in bloc
     # Collé dans un dict, ça doit se parser.
     ast.parse("SYNONYMES = {\n" + bloc.replace("#", "  #") + "\n}")
+
+
+# ── 10. Persistance du lexique dans le dépôt ─────────
+def test_terme_accentue_est_normalise():
+    """Défaut corrigé : les tables sont consultées avec des mots
+    DÉPOUILLÉS de leurs accents. Une clé accentuée n'était jamais
+    trouvée — l'ajout ne servait à rien, en silence."""
+    from chiffrage import lexique
+
+    lexique.ajouter_synonyme("Maçonneries", "maconnerie")
+    assert "maconneries" in lexique.SURCOUCHE["synonymes"]
+    assert "maconnerie" in suggestion.normaliser("Sablage des maçonneries")
+
+
+@pytest.mark.parametrize("terme", [
+    'x"; import os',          # injection : le terme finissait dans du code
+    "trop " * 20,             # longueur
+    "",                       # vide
+    "<script>",               # balise
+    "terme; DROP",           # ponctuation d'injection
+])
+def test_terme_irrecevable_est_refuse(terme):
+    from chiffrage import lexique
+
+    with pytest.raises(ValueError):
+        lexique.ajouter_synonyme(terme, "nettoyage")
+
+
+def test_saut_de_ligne_est_recolle_pas_refuse():
+    """Coller un libellé depuis un PDF amène des sauts de ligne. Ils
+    deviennent des espaces — une expression multi-mots est valide, et
+    un saut de ligne ne peut rien casser dans du JSON."""
+    from chiffrage import lexique
+
+    lexique.ajouter_expression("carrelage\nmural", "faience")
+    assert "carrelage mural" in lexique.SURCOUCHE["expressions"]
+
+
+def test_couche_locale_absente_ne_casse_rien(tmp_path):
+    """Un lexique_local.json absent est le cas NORMAL : l'outil doit
+    chiffrer sans lui."""
+    from chiffrage import lexique
+
+    assert lexique.charger_local(tmp_path / "rien.json") == {
+        "expressions": {}, "synonymes": {}}
+
+
+def test_couche_locale_illisible_ne_casse_rien(tmp_path):
+    """Un fichier corrompu ne doit pas empêcher de répondre à un
+    marché : on revient aux tables du dépôt."""
+    from chiffrage import lexique
+
+    fichier = tmp_path / "casse.json"
+    fichier.write_text("{ceci n'est pas du json", encoding="utf-8")
+    assert lexique.charger_local(fichier) == {
+        "expressions": {}, "synonymes": {}}
+
+
+def test_couche_locale_est_normalisee_au_chargement(tmp_path):
+    import json
+
+    from chiffrage import lexique
+
+    fichier = tmp_path / "lex.json"
+    fichier.write_text(
+        json.dumps({"synonymes": {"Sablage ": "Nettoyage"}}), encoding="utf-8")
+    assert lexique.charger_local(fichier)["synonymes"] == {
+        "sablage": "nettoyage"}
+
+
+def test_fusion_respecte_la_precedance():
+    """dépôt < appris < à chaud : un essai en cours doit l'emporter
+    sur ce qui est commité, sinon on ne peut rien corriger."""
+    from chiffrage import lexique
+
+    lexique.LOCAL["synonymes"]["sablage"] = "peinture"
+    lexique.ajouter_synonyme("sablage", "nettoyage")
+    try:
+        fusion = lexique.fusion_a_commiter({"synonymes": {"sablage": "chape"}})
+        assert fusion["synonymes"]["sablage"] == "nettoyage"
+    finally:
+        lexique.LOCAL["synonymes"].clear()
+
+
+def test_commit_fusionne_avec_le_distant_et_n_ecrase_rien():
+    """Deux personnes peuvent régler le lexique le même jour : un
+    PUT sans fusion effacerait les termes de l'autre en silence."""
+    import json
+
+    from chiffrage import depot_github, lexique
+
+    ecrit = {}
+
+    def _lire(chemin, depot, token, branche):
+        return json.dumps({"synonymes": {"pose-existant": "carrelage"}}), "sha1"
+
+    def _ecrire(chemin, contenu, message, depot, token, branche, sha):
+        ecrit.update(chemin=chemin, contenu=contenu, sha=sha, branche=branche)
+        return "https://github.com/x/y/commit/abc"
+
+    lexique.ajouter_synonyme("sablage", "nettoyage")
+    fusion, url = depot_github.commiter_lexique(
+        None, "moi/depot", "jeton", _lire=_lire, _ecrire=_ecrire)
+
+    # Le terme de l'autre a survécu, le nôtre est arrivé.
+    assert fusion["synonymes"] == {"pose-existant": "carrelage",
+                                    "sablage": "nettoyage"}
+    assert ecrit["sha"] == "sha1"      # écriture conditionnée à la version lue
+    assert ecrit["chemin"].endswith("lexique_local.json")
+    assert json.loads(ecrit["contenu"])["synonymes"]["sablage"] == "nettoyage"
+    assert url.startswith("https://github.com/")
+
+
+def test_commit_premier_fichier_sans_sha():
+    """Au tout premier commit, le fichier n'existe pas : pas de sha."""
+    from chiffrage import depot_github, lexique
+
+    vu = {}
+
+    def _ecrire(chemin, contenu, message, depot, token, branche, sha):
+        vu["sha"] = sha
+        return "url"
+
+    lexique.ajouter_synonyme("sablage", "nettoyage")
+    depot_github.commiter_lexique(
+        None, "moi/depot", "jeton",
+        _lire=lambda *a, **k: (None, None), _ecrire=_ecrire)
+    assert vu["sha"] is None
+
+
+def test_erreur_github_est_expliquee():
+    """Un « 403 » brut n'apprend rien : le message doit dire quoi
+    vérifier."""
+    import urllib.error
+
+    from chiffrage import depot_github
+
+    def _appel(*a, **k):
+        raise urllib.error.HTTPError("u", 403, "Forbidden", {}, None)
+
+    with pytest.raises(depot_github.ErreurDepot) as err:
+        depot_github.lire_fichier("f", "moi/depot", "jeton", _appel=_appel)
+    assert "Contents: read and write" in str(err.value)
+
+
+def test_fichier_absent_nest_pas_une_erreur():
+    import urllib.error
+
+    from chiffrage import depot_github
+
+    def _appel(*a, **k):
+        raise urllib.error.HTTPError("u", 404, "Not Found", {}, None)
+
+    assert depot_github.lire_fichier(
+        "f", "moi/depot", "jeton", _appel=_appel) == (None, None)

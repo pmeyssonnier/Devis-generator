@@ -34,6 +34,90 @@ mots : une inférence fausse ne doit pas faire disparaître un candidat
 valable, seulement le reléguer.
 """
 
+import json
+import re
+import unicodedata
+from pathlib import Path
+
+# ══════════════════════════════════════
+#  Normalisation des termes
+# ══════════════════════════════════════
+#
+# Les tables sont consultées avec des mots DÉJÀ dépouillés de leurs
+# accents (voir suggestion.normaliser). Une clé accentuée ne serait
+# donc jamais trouvée : « maçonneries » ne rencontrerait jamais le mot
+# « maconneries » extrait du libellé. Tout terme entrant passe par ici.
+
+
+def sans_accents(texte):
+    """'Étanchéité' -> 'etancheite'."""
+    decompose = unicodedata.normalize("NFD", str(texte))
+    return "".join(c for c in decompose if unicodedata.category(c) != "Mn")
+
+
+def normaliser_terme(terme):
+    """Met un terme sous la forme exacte des clés des tables."""
+    return re.sub(r"\s+", " ", sans_accents(terme).strip().lower())
+
+
+# Un terme est une expression de métré, pas du texte libre : on borne
+# ce qui peut entrer, d'autant que ces valeurs finissent commitées.
+_TERME_VALIDE = re.compile(r"^[a-z0-9][a-z0-9 '-]{0,48}$")
+
+
+def valider_terme(terme):
+    """Rend le terme normalisé, ou lève ValueError s'il est irrecevable."""
+    normalise = normaliser_terme(terme)
+    if not _TERME_VALIDE.match(normalise):
+        raise ValueError(
+            f"Terme irrecevable : « {terme} ». Attendu : lettres, "
+            f"chiffres, espaces, apostrophes ou tirets, 49 caractères "
+            f"au plus."
+        )
+    return normalise
+
+
+# ══════════════════════════════════════
+#  Couche locale — le lexique appris, commité comme DONNÉE
+# ══════════════════════════════════════
+#
+# `lexique_local.json` est écrit par le bouton « commiter » de
+# l'interface. C'est du JSON et NON du Python, délibérément : le
+# contenu vient d'un champ de saisie, et écrire du code exécutable à
+# partir d'une saisie serait une injection — un terme contenant un
+# guillemet ou un saut de ligne deviendrait du code au prochain
+# déploiement. Du JSON ne s'exécute pas ; le pire cas est un synonyme
+# absurde, pas une prise de contrôle.
+#
+# Ce fichier est facultatif : sans lui, seules les tables ci-dessous
+# valent.
+
+CHEMIN_LOCAL = Path(__file__).resolve().parent / "lexique_local.json"
+
+
+def charger_local(chemin=None):
+    """Lit lexique_local.json. Un fichier absent ou illisible ne doit
+    JAMAIS empêcher l'outil de chiffrer : on revient aux tables."""
+    chemin = Path(chemin or CHEMIN_LOCAL)
+    vide = {"expressions": {}, "synonymes": {}}
+    if not chemin.exists():
+        return vide
+    try:
+        donnees = json.loads(chemin.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return vide
+    return {
+        table: {
+            normaliser_terme(k): normaliser_terme(v)
+            for k, v in (donnees.get(table) or {}).items()
+        }
+        for table in ("expressions", "synonymes")
+    }
+
+
+LOCAL = charger_local()
+
+
 # ── Expressions à traduire AVANT la découpe en mots ──────────────
 # (sans accents : la normalisation les a déjà retirés)
 EXPRESSIONS = {
@@ -163,18 +247,42 @@ SURCOUCHE = {"expressions": {}, "synonymes": {}}
 
 def ajouter_expression(expression, canonique):
     """Ajoute une expression multi-mots à la surcouche vivante."""
-    SURCOUCHE["expressions"][expression.strip().lower()] = canonique.strip().lower()
+    SURCOUCHE["expressions"][valider_terme(expression)] = (
+        valider_terme(canonique))
 
 
 def ajouter_synonyme(variante, canonique):
     """Ajoute un synonyme mot à mot à la surcouche vivante."""
-    SURCOUCHE["synonymes"][variante.strip().lower()] = canonique.strip().lower()
+    SURCOUCHE["synonymes"][valider_terme(variante)] = valider_terme(canonique)
 
 
 def vider_surcouche():
     """Revient au lexique du dépôt seul."""
     SURCOUCHE["expressions"].clear()
     SURCOUCHE["synonymes"].clear()
+
+
+def fusion_a_commiter(distant=None):
+    """Rend le contenu complet de lexique_local.json à écrire.
+
+    Fusionne, par précédance croissante : ce qui est déjà commité
+    (`distant`, relu au moment du commit pour ne pas écraser l'ajout
+    d'un autre), la couche locale chargée au démarrage, puis les
+    ajouts à chaud.
+    """
+    fusion = {"expressions": {}, "synonymes": {}}
+    for source in (distant or {}, LOCAL, SURCOUCHE):
+        for table in fusion:
+            fusion[table].update(source.get(table) or {})
+    return fusion
+
+
+def adopter_local(contenu):
+    """Prend un contenu fraîchement commité comme nouvelle couche
+    locale, et vide les ajouts à chaud qu'il contient désormais."""
+    for table in ("expressions", "synonymes"):
+        LOCAL[table] = dict(contenu.get(table) or {})
+    vider_surcouche()
 
 
 def surcouche_en_python():
@@ -196,7 +304,9 @@ def surcouche_en_python():
 
 def appliquer_expressions(texte):
     """Traduit les expressions multi-mots. Texte déjà sans accents."""
-    for table in (EXPRESSIONS, SURCOUCHE["expressions"]):
+    # Précédance croissante : dépôt, puis appris, puis à chaud.
+    for table in (EXPRESSIONS, LOCAL["expressions"],
+                   SURCOUCHE["expressions"]):
         for expression, canonique in table.items():
             if expression in texte:
                 texte = texte.replace(expression, canonique)
@@ -209,7 +319,10 @@ def canoniser(mot):
     La surcouche vivante l'emporte sur la table du dépôt : c'est ce
     qui permet d'essayer une correction avant de la commiter.
     """
-    return SURCOUCHE["synonymes"].get(mot, SYNONYMES.get(mot, mot))
+    for table in (SURCOUCHE["synonymes"], LOCAL["synonymes"], SYNONYMES):
+        if mot in table:
+            return table[mot]
+    return mot
 
 
 def est_demolition(mots):

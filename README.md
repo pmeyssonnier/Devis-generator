@@ -126,8 +126,44 @@ Deux limites, que l'app affiche plutôt que de les laisser découvrir :
 l'ajout vaut pour **l'app entière et tous ses utilisateurs** (la
 surcouche est globale au processus, et un serveur Streamlit sert tous
 ses visiteurs depuis un seul processus), et il **ne survit pas au
-redémarrage**. L'app rend le bloc Python à coller dans `lexique.py`
-pour le rendre permanent — elle ne peut pas commiter à ta place.
+redémarrage** — sauf à le commiter, voir juste en dessous.
+
+### Rendre les termes permanents
+
+Avec un jeton GitHub configuré, l'onglet Lexique affiche un bouton
+**« Commiter ces termes »** : les termes appris sont écrits dans
+`chiffrage/lexique_local.json`, l'app se redéploie seule, et ils
+deviennent définitifs. Plus aucun aller-retour par un éditeur.
+
+**C'est du JSON, pas du Python, et c'est délibéré.** Le contenu vient
+d'un champ de saisie : écrire du code exécutable à partir d'une saisie
+serait une injection — un terme contenant un guillemet ou un saut de
+ligne deviendrait du code au prochain déploiement. Du JSON ne
+s'exécute pas ; le pire cas est un synonyme absurde. Les termes sont
+en plus bornés à l'entrée (lettres, chiffres, espaces, apostrophes,
+tirets, 49 caractères).
+
+Le commit **relit le fichier distant et fusionne** avant d'écrire :
+deux personnes peuvent régler le lexique le même jour sans que l'une
+efface les termes de l'autre.
+
+**Configuration** — Streamlit Cloud, *Settings → Secrets* :
+
+```toml
+[github]
+token = "github_pat_..."
+depot = "pmeyssonnier/Devis-generator"
+branche = "main"
+```
+
+⚠️ **Un PAT fine-grained**, limité au seul dépôt `Devis-generator`,
+permission *Contents: read and write*, avec une date d'expiration.
+**Pas** un jeton classique à portée `repo` : celui-là donne
+l'écriture sur **tous** les dépôts du compte, pour une fonction qui
+n'a besoin que d'un fichier.
+
+Sans jeton, rien ne casse : le bouton n'apparaît pas, et l'app
+continue de rendre le bloc à coller à la main.
 
 **L'opération est une facette, pas un mot.** « Dépose de carrelage » et
 « Pose de carrelage » ne diffèrent que par un mot, et ce sont deux
@@ -209,6 +245,7 @@ exporter_devis(d, "devis_2026-042.xlsx",
 | `devis_xlsx.py` | devis client prêt à envoyer : en-tête, postes par lot, TVA, conditions, signature | openpyxl |
 | `suggestion.py` | appariement poste imposé → ouvrage, à partir du libellé | — |
 | `lexique.py` | vocabulaire de CSC → vocabulaire de la bibliothèque, facette d'opération | — |
+| `depot_github.py` | écrit le lexique appris dans le dépôt (API GitHub, urllib) | — |
 | `gen_metre.py` | métré de marché public fictif (49 postes, 10 lots) pour s'entraîner | openpyxl |
 | `metre_io.py` | lecture d'un métré imposé + remplissage de l'offre | openpyxl |
 | `__main__.py` | ligne de commande | — |
@@ -405,8 +442,9 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-53 tests. Ceux de la chaîne Excel se skippent sans openpyxl, ceux de
-l'interface sans streamlit.
+69 tests. Ceux de la chaîne Excel se skippent sans openpyxl, ceux de
+l'interface sans streamlit. L'écriture GitHub est testée avec un
+dépôt simulé — la suite ne touche jamais au réseau.
 
 L'interface est testée par `AppTest` de Streamlit, qui exécute vraiment le
 script : dépôt d'un métré, appariement, clic sur « Chiffrer », offre

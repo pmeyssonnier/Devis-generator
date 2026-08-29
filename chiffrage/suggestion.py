@@ -30,7 +30,6 @@ Python pur : aucune dépendance, testable en CI.
 """
 
 import re
-import unicodedata
 from difflib import SequenceMatcher
 
 from .lexique import (
@@ -38,6 +37,7 @@ from .lexique import (
     appliquer_expressions,
     canoniser,
     est_demolition,
+    sans_accents,
 )
 
 # Mots trop fréquents dans un métré pour distinguer quoi que ce soit.
@@ -68,12 +68,6 @@ _PIVOTS = frozenset(
 )
 
 
-def _sans_accents(texte):
-    """'Étanchéité' -> 'etancheite'."""
-    decompose = unicodedata.normalize("NFD", texte)
-    return "".join(c for c in decompose if unicodedata.category(c) != "Mn")
-
-
 def normaliser(texte, garder_operation=False):
     """
     Libellé -> liste de mots significatifs, traduits vers le vocabulaire
@@ -84,7 +78,7 @@ def normaliser(texte, garder_operation=False):
     démolitions sans rapport. L'opération est traitée à part, comme une
     facette. `garder_operation=True` les conserve, pour la détecter.
     """
-    texte = _sans_accents(str(texte or "")).lower()
+    texte = sans_accents(str(texte or "")).lower()
     texte = appliquer_expressions(texte)
     mots = [
         canoniser(m)

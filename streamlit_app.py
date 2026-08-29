@@ -32,11 +32,14 @@ from chiffrage.bibliotheque import (
     PARAMS,
 )
 from chiffrage.devis_xlsx import exporter_devis
+from chiffrage.depot_github import ErreurDepot, commiter_lexique
 from chiffrage.lexique import (
     DEMOLITION,
     EXPRESSIONS,
+    LOCAL,
     SURCOUCHE,
     SYNONYMES,
+    adopter_local,
     ajouter_expression,
     ajouter_synonyme,
     surcouche_en_python,
@@ -712,14 +715,18 @@ with onglet_lexique:
     if ajouter:
         # Une expression multi-mots se traduit AVANT la découpe en mots,
         # un mot seul APRÈS : ce ne sont pas les mêmes tables.
-        if " " in variante.strip():
-            ajouter_expression(variante, canonique)
+        try:
+            if " " in variante.strip():
+                ajouter_expression(variante, canonique)
+            else:
+                ajouter_synonyme(variante, canonique)
+        except ValueError as err:
+            st.error(str(err), icon="🛑")
         else:
-            ajouter_synonyme(variante, canonique)
-        st.session_state.lexique_version = (
-            st.session_state.get("lexique_version", 0) + 1
-        )
-        st.rerun()
+            st.session_state.lexique_version = (
+                st.session_state.get("lexique_version", 0) + 1
+            )
+            st.rerun()
 
     # ── Ce qui a été ajouté à chaud ────────────────
     ajouts = dict(SURCOUCHE["expressions"], **SURCOUCHE["synonymes"])
@@ -734,6 +741,55 @@ with onglet_lexique:
             icon="⚠️",
         )
         st.code(surcouche_en_python(), language="python")
+        # ── Rendre permanent, si un jeton est configuré ─────────
+        # `st.secrets` LÈVE quand aucun fichier de secrets n'existe —
+        # ce n'est pas un dict vide. C'est le cas normal en local, et
+        # un plantage y serait absurde : sans jeton, on n'affiche
+        # simplement pas le bouton.
+        try:
+            github = dict(st.secrets.get("github", {}))
+        except Exception:
+            github = {}
+        depot, jeton = github.get("depot"), github.get("token")
+
+        if depot and jeton:
+            st.markdown(
+                f"**Commiter dans `{depot}`** — les termes sont écrits "
+                f"dans `chiffrage/lexique_local.json`, **du JSON et non "
+                f"du code**. L'app se redéploie seule ensuite, et ils "
+                f"deviennent définitifs."
+            )
+            if st.button("📤 Commiter ces termes", type="primary",
+                          width="stretch"):
+                with st.spinner("Écriture dans le dépôt…"):
+                    try:
+                        fusion, url = commiter_lexique(
+                            None, depot, jeton,
+                            branche=github.get("branche", "main"),
+                        )
+                    except ErreurDepot as err:
+                        st.error(str(err), icon="🛑")
+                    else:
+                        # Ce qui vient d'être commité devient la couche
+                        # locale : les ajouts à chaud n'ont plus lieu
+                        # d'être, ils sont dans le dépôt.
+                        adopter_local(fusion)
+                        st.session_state.lexique_version = (
+                            st.session_state.get("lexique_version", 0) + 1
+                        )
+                        st.success(
+                            f"Commité. [Voir le commit]({url}) — l'app se "
+                            f"redéploie dans une à deux minutes.",
+                            icon="✅",
+                        )
+                        st.rerun()
+        else:
+            st.caption(
+                "Aucun jeton GitHub configuré : les termes ne peuvent "
+                "pas être commités depuis ici. Voir README, section "
+                "« Rendre les termes permanents »."
+            )
+
         col_dl, col_raz = st.columns(2)
         with col_dl:
             st.download_button(
@@ -760,6 +816,8 @@ with onglet_lexique:
     entrees = (
         [("expression", k, v) for k, v in EXPRESSIONS.items()]
         + [("mot", k, v) for k, v in SYNONYMES.items() if v]
+        + [("appris", k, v) for k, v in LOCAL["expressions"].items()]
+        + [("appris", k, v) for k, v in LOCAL["synonymes"].items()]
     )
     if filtre.strip():
         motif = filtre.strip().lower()

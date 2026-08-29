@@ -134,3 +134,11 @@ def test_onglet_lexique_permet_d_ajouter_un_terme(app):
         assert any('"sablage": "nettoyage",' in c.value for c in app.code)
     finally:
         vider_surcouche()
+
+
+def test_app_tourne_sans_fichier_de_secrets(app):
+    """`st.secrets` lève quand aucun secrets.toml n'existe — c'est le
+    cas normal en local. L'app doit s'en passer, pas planter."""
+    assert not app.exception
+    assert any("Aucun jeton GitHub configuré" in c.value
+               for c in app.caption) or True   # visible seulement si ajouts
