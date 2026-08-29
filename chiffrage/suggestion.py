@@ -10,6 +10,10 @@ tout le processus, et le seul qui obligeait encore à éditer du Python.
 Ce module propose des candidats à partir du libellé. Il ne décide rien :
 il classe, l'humain tranche. Deux règles qui expliquent tout le reste.
 
+**Le vocabulaire du CSC est traduit** vers celui de la bibliothèque
+avant toute comparaison — « carrelage mural » devient « faïence »,
+« crépi » devient « enduit ». Voir lexique.py.
+
 **L'unité est éliminatoire, pas départageante.** Un poste imposé au mètre
 courant ne peut pas être chiffré par un ouvrage au m², quelle que soit la
 ressemblance des libellés — le prix serait faux d'un facteur inconnu, et
@@ -29,6 +33,13 @@ import re
 import unicodedata
 from difflib import SequenceMatcher
 
+from .lexique import (
+    PENALITE_OPERATION_OPPOSEE,
+    appliquer_expressions,
+    canoniser,
+    est_demolition,
+)
+
 # Mots trop fréquents dans un métré pour distinguer quoi que ce soit.
 # Les garder ferait remonter n'importe quel poste contenant « compris ».
 _VIDES = frozenset(
@@ -37,6 +48,9 @@ _VIDES = frozenset(
     a à d l un une compris comprise comprises y compris toute toutes tout
     tous ouvrage ouvrages travaux fourniture fournitures pose mise oeuvre
     ml m m2 m3 pce ff u qf qp
+    existant existante existants existantes ancien ancienne neuf neuve
+    prealable prealablement necessaire necessaires divers diverses
+    seul seule complet complete type suivant selon place
     """.split()
 )
 
@@ -60,11 +74,29 @@ def _sans_accents(texte):
     return "".join(c for c in decompose if unicodedata.category(c) != "Mn")
 
 
-def normaliser(texte):
-    """Libellé -> liste de mots significatifs, sans accents ni ponctuation."""
+def normaliser(texte, garder_operation=False):
+    """
+    Libellé -> liste de mots significatifs, traduits vers le vocabulaire
+    de la bibliothèque (voir lexique.py).
+
+    Les marqueurs de démolition sont RETIRÉS par défaut : ils sont si
+    fréquents dans un métré qu'ils faisaient se ressembler deux
+    démolitions sans rapport. L'opération est traitée à part, comme une
+    facette. `garder_operation=True` les conserve, pour la détecter.
+    """
     texte = _sans_accents(str(texte or "")).lower()
-    mots = re.split(r"[^a-z0-9]+", texte)
-    return [m for m in mots if m and m not in _VIDES and len(m) > 2]
+    texte = appliquer_expressions(texte)
+    mots = [
+        canoniser(m)
+        for m in re.split(r"[^a-z0-9-]+", texte)
+        if m and m not in _VIDES and len(m) > 2
+    ]
+    mots = [m for m in mots if m and len(m) > 2 and m not in _VIDES]
+    if garder_operation:
+        return mots
+    from .lexique import DEMOLITION
+
+    return [m for m in mots if m not in DEMOLITION]
 
 
 def score(libelle_poste, libelle_ouvrage):
@@ -83,6 +115,18 @@ def score(libelle_poste, libelle_ouvrage):
     if not mots_poste or not mots_ouvrage:
         return 0.0
 
+    # L'opération (dépose vs mise en œuvre) est une facette, pas un mot :
+    # les deux libellés doivent décrire le MÊME sens de travail.
+    demolition_poste = est_demolition(
+        normaliser(libelle_poste, garder_operation=True))
+    demolition_ouvrage = est_demolition(
+        normaliser(libelle_ouvrage, garder_operation=True))
+    penalite = (
+        PENALITE_OPERATION_OPPOSEE
+        if demolition_poste != demolition_ouvrage
+        else 1.0
+    )
+
     communs = mots_poste & mots_ouvrage
     recouvrement = len(communs) / len(mots_poste | mots_ouvrage)
 
@@ -93,7 +137,8 @@ def score(libelle_poste, libelle_ouvrage):
     pivots = len(communs & _PIVOTS)
     bonus = min(0.20, 0.10 * pivots)
 
-    return round(min(1.0, 0.5 * recouvrement + 0.5 * chaine + bonus), 4)
+    brut = min(1.0, 0.5 * recouvrement + 0.5 * chaine + bonus)
+    return round(brut * penalite, 4)
 
 
 def suggerer(poste, bordereau, limite=3, seuil=0.0):

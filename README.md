@@ -109,11 +109,30 @@ Deux règles y sont gravées :
   d'une lettre. Un score élevé dit « regarde ici d'abord », jamais
   « c'est bon ».
 
-Sur des libellés réécrits comme le ferait une vraie commune,
-l'appariement tombe juste **du premier coup dans ~60 % des cas**, et
-place la bonne réponse **dans les trois premières dans ~90 %**. La
-correspondance obtenue se télécharge en `.json` et se recharge au marché
-suivant : une commune réutilise ses propres codes.
+Le vocabulaire du CSC est traduit vers celui de la bibliothèque avant
+toute comparaison (`chiffrage/lexique.py`) : « carrelage mural » devient
+« faïence », « crépi » devient « enduit », « mousse polyuréthane »
+devient « PIR ». Déterministe et relisible — là où une similarité
+cosinus est un nombre qu'on subit, une entrée de lexique est une
+décision qu'on relit.
+
+**L'opération est une facette, pas un mot.** « Dépose de carrelage » et
+« Pose de carrelage » ne diffèrent que par un mot, et ce sont deux
+travaux opposés à des prix qui vont du simple au triple. Les verbes de
+démolition sont donc retirés de la comparaison lexicale et traités comme
+une dimension à part, comme l'unité — sinon deux démolitions **sans
+rapport** se ressemblent (« dépose du carrelage mural » proposait
+« dépose de plafond » : deux fois le mot « dépose », et rien d'autre en
+commun). Pénalité et non élimination, à la différence de l'unité :
+l'unité est déclarée dans le métré, l'opération est inférée de mots, et
+une inférence fausse ne doit pas faire disparaître un candidat valable.
+
+Mesuré sur `evaluation/` (voir plus bas) : **98 % au premier rang, 100 %
+dans les trois premiers**, et l'outil se tait sur 7 des 8 postes
+qu'aucun ouvrage ne couvre.
+
+La correspondance obtenue se télécharge en `.json` et se recharge au
+marché suivant : une commune réutilise ses propres codes.
 
 ### Depuis le téléphone — Colab
 
@@ -176,6 +195,7 @@ exporter_devis(d, "devis_2026-042.xlsx",
 | `export_xlsx.py` | bibliothèque → Excel 6 onglets, **avec vraies formules** | openpyxl |
 | `devis_xlsx.py` | devis client prêt à envoyer : en-tête, postes par lot, TVA, conditions, signature | openpyxl |
 | `suggestion.py` | appariement poste imposé → ouvrage, à partir du libellé | — |
+| `lexique.py` | vocabulaire de CSC → vocabulaire de la bibliothèque, facette d'opération | — |
 | `gen_metre.py` | métré de marché public fictif (49 postes, 10 lots) pour s'entraîner | openpyxl |
 | `metre_io.py` | lecture d'un métré imposé + remplissage de l'offre | openpyxl |
 | `__main__.py` | ligne de commande | — |
@@ -199,6 +219,7 @@ une cellule Colab.
 │   └── __main__.py           → ligne de commande
 ├── streamlit_app.py        → interface web : dépôt du métré, appariement
 │                               des postes à l'écran, téléchargement
+├── evaluation/              → jeu d'épreuve de l'appariement + mesure
 ├── colab/                   → notebook Colab : monte Drive, range les
 │                               fichiers dans BAG_BATTER/Chiffrage/
 ├── tests/                   → 42 tests (se skippent sans openpyxl/streamlit)
@@ -255,6 +276,47 @@ postes restés vides ; cette liste doit être à **zéro** avant envoi.
 
 **TVA.** 6 % uniquement si logement de plus de dix ans, usage principalement
 privé, facturation au consommateur final. **En marché public : 21 %.**
+
+---
+
+## Mesurer l'appariement
+
+```bash
+python evaluation/mesurer_appariement.py       # -v pour le détail
+```
+
+`evaluation/epreuves_appariement.json` contient 58 libellés écrits en
+vocabulaire de cahier spécial des charges, avec la bonne réponse.
+Trois chiffres, et le troisième est le plus important :
+
+| | |
+|---|---:|
+| **rang 1** — la bonne réponse arrive en tête | 49/50 · 98 % |
+| **top 3** — elle est dans les trois premières, donc visible dans l'interface | 50/50 · 100 % |
+| **silence** — sur les postes qu'aucun ouvrage ne couvre, l'outil se tait | 7/8 · 88 % |
+
+Une suggestion confiante sur un poste qu'aucun ouvrage ne couvre est
+**pire** que pas de suggestion : elle fait chiffrer un travail par un
+autre. Un gain sur « rang 1 » payé par une perte sur « silence » n'est
+donc pas un gain.
+
+**Ces chiffres sont optimistes et il faut le savoir.** Les libellés
+d'épreuve sont écrits par la même main que la bibliothèque, et le
+lexique a été réglé en les regardant. Sur un échantillon témoin de 12
+libellés écrits avant que le lexique n'existe et qui n'ont servi à aucun
+réglage, l'appariement passe de 7/12 à 12/12 au premier rang — c'est le
+gain réel du lexique, mesuré hors réglage. Le niveau sur un vrai cahier
+des charges sera plus bas.
+
+**Le jeu d'épreuve est fait pour être enrichi** : à chaque marché reçu,
+y ajouter les libellés réels et leur bonne réponse. C'est ce qui rend la
+mesure représentative, et ce qui permettra un jour de trancher
+objectivement l'ajout d'embeddings sémantiques — en comparant sur le
+même jeu, plutôt qu'au jugé.
+
+Les seuils de `tests/test_evaluation.py` sont volontairement **sous** le
+niveau mesuré : ils protègent d'une régression, ils ne certifient pas
+une performance.
 
 ---
 

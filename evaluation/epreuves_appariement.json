@@ -1,0 +1,411 @@
+{
+  "_lisez_moi": "Jeu d'épreuve de l'appariement poste imposé -> ouvrage. Libellés écrits en vocabulaire de cahier spécial des charges, sans mot commun avec la bibliothèque au-delà du sens. attendu = null signifie que l'outil doit se TAIRE : aucun ouvrage ne convient, et proposer quand même est une faute. À enrichir avec les libellés réels de chaque marché reçu — c'est ce qui rend la mesure représentative.",
+  "epreuves": [
+    {
+      "libelle": "Amenée et repli du matériel de chantier",
+      "unite": "FF",
+      "attendu": "10.10",
+      "type": "reformulation",
+      "note": ""
+    },
+    {
+      "libelle": "Montage, location et démontage d'un échafaudage de pied",
+      "unite": "m2",
+      "attendu": "10.20",
+      "type": "reformulation",
+      "note": ""
+    },
+    {
+      "libelle": "Bâchage et protection des ouvrages maintenus",
+      "unite": "m2",
+      "attendu": "10.30",
+      "type": "reformulation",
+      "note": ""
+    },
+    {
+      "libelle": "Clôture de chantier et signalisation réglementaire",
+      "unite": "FF",
+      "attendu": "10.40",
+      "type": "reformulation",
+      "note": ""
+    },
+    {
+      "libelle": "Remise du dossier d'intervention ultérieure et des garanties",
+      "unite": "FF",
+      "attendu": "10.50",
+      "type": "reformulation",
+      "note": ""
+    },
+    {
+      "libelle": "Piquage des enduits dégradés sur support maçonné",
+      "unite": "m2",
+      "attendu": "20.10",
+      "type": "reformulation",
+      "note": ""
+    },
+    {
+      "libelle": "Démolition de cloisons légères en plaques",
+      "unite": "m2",
+      "attendu": "20.20",
+      "type": "reformulation",
+      "note": ""
+    },
+    {
+      "libelle": "Enlèvement du plafonnage existant",
+      "unite": "m2",
+      "attendu": "20.30",
+      "type": "reformulation",
+      "note": "« enlèvement » pour « dépose », « plafonnage » pour « plafond »"
+    },
+    {
+      "libelle": "Démontage des châssis existants",
+      "unite": "pce",
+      "attendu": "20.40",
+      "type": "reformulation",
+      "note": ""
+    },
+    {
+      "libelle": "Évacuation des gravats vers centre de tri agréé",
+      "unite": "m3",
+      "attendu": "20.50",
+      "type": "reformulation",
+      "note": ""
+    },
+    {
+      "libelle": "Arrachage du revêtement de sol et de la chape",
+      "unite": "m2",
+      "attendu": "20.60",
+      "type": "reformulation",
+      "note": ""
+    },
+    {
+      "libelle": "Démontage des appareils sanitaires et de la tuyauterie",
+      "unite": "pce",
+      "attendu": "20.70",
+      "type": "reformulation",
+      "note": ""
+    },
+    {
+      "libelle": "Rebouchage de baie en maçonnerie de briques",
+      "unite": "m2",
+      "attendu": "30.10",
+      "type": "reformulation",
+      "note": ""
+    },
+    {
+      "libelle": "Fourniture et pose de linteaux préfabriqués",
+      "unite": "m",
+      "attendu": "30.20",
+      "type": "reformulation",
+      "note": ""
+    },
+    {
+      "libelle": "Réparation des bétons dégradés et passivation des armatures",
+      "unite": "m2",
+      "attendu": "30.30",
+      "type": "reformulation",
+      "note": ""
+    },
+    {
+      "libelle": "Cimentage hydrofuge en pied de façade",
+      "unite": "m2",
+      "attendu": "30.40",
+      "type": "reformulation",
+      "note": ""
+    },
+    {
+      "libelle": "Fourniture et pose de seuils en pierre bleue",
+      "unite": "m",
+      "attendu": "30.50",
+      "type": "reformulation",
+      "note": ""
+    },
+    {
+      "libelle": "Rejointoiement des maçonneries au mortier de chaux",
+      "unite": "m2",
+      "attendu": "30.60",
+      "type": "reformulation",
+      "note": ""
+    },
+    {
+      "libelle": "Nettoyage de parement par projection d'eau sous pression",
+      "unite": "m2",
+      "attendu": "40.10",
+      "type": "reformulation",
+      "note": ""
+    },
+    {
+      "libelle": "Crépi extérieur deux couches avec treillis d'armature",
+      "unite": "m2",
+      "attendu": "40.20",
+      "type": "reformulation",
+      "note": "« crépi » ne figure nulle part dans la bibliothèque"
+    },
+    {
+      "libelle": "Mise en peinture de façade, produit siloxane",
+      "unite": "m2",
+      "attendu": "40.30",
+      "type": "reformulation",
+      "note": ""
+    },
+    {
+      "libelle": "Membrane bitumineuse soudée en deux couches",
+      "unite": "m2",
+      "attendu": "40.40",
+      "type": "reformulation",
+      "note": ""
+    },
+    {
+      "libelle": "Étanchéité en membrane synthétique EPDM collée",
+      "unite": "m2",
+      "attendu": "40.50",
+      "type": "reformulation",
+      "note": ""
+    },
+    {
+      "libelle": "Zinguerie : solins et couvre-murs",
+      "unite": "m",
+      "attendu": "40.60",
+      "type": "reformulation",
+      "note": ""
+    },
+    {
+      "libelle": "Isolation thermique en mousse polyuréthane 8 cm",
+      "unite": "m2",
+      "attendu": "50.10",
+      "type": "reformulation",
+      "note": "« polyuréthane » pour « PIR »"
+    },
+    {
+      "libelle": "Isolation en laine de roche entre montants",
+      "unite": "m2",
+      "attendu": "50.20",
+      "type": "reformulation",
+      "note": ""
+    },
+    {
+      "libelle": "Membrane frein-vapeur et adhésifs d'étanchéité à l'air",
+      "unite": "m2",
+      "attendu": "50.30",
+      "type": "reformulation",
+      "note": ""
+    },
+    {
+      "libelle": "Cimentage des parois intérieures, finition lissée",
+      "unite": "m2",
+      "attendu": "60.10",
+      "type": "reformulation",
+      "note": "piège connu : « cimentage » attire 30.40, qui est en soubassement"
+    },
+    {
+      "libelle": "Plafond suspendu en plaques de plâtre sur ossature",
+      "unite": "m2",
+      "attendu": "60.20",
+      "type": "reformulation",
+      "note": ""
+    },
+    {
+      "libelle": "Rattrapage d'enduit au droit des linteaux",
+      "unite": "m",
+      "attendu": "60.30",
+      "type": "reformulation",
+      "note": ""
+    },
+    {
+      "libelle": "Profilés d'angle et baguettes de finition",
+      "unite": "m",
+      "attendu": "60.40",
+      "type": "reformulation",
+      "note": ""
+    },
+    {
+      "libelle": "Mise en peinture des parois verticales, deux couches",
+      "unite": "m2",
+      "attendu": "70.10",
+      "type": "reformulation",
+      "note": ""
+    },
+    {
+      "libelle": "Peinture des plafonds, deux couches",
+      "unite": "m2",
+      "attendu": "70.20",
+      "type": "reformulation",
+      "note": ""
+    },
+    {
+      "libelle": "Ratissage des murs avant mise en peinture",
+      "unite": "m2",
+      "attendu": "70.30",
+      "type": "reformulation",
+      "note": ""
+    },
+    {
+      "libelle": "Revêtement de sol en carreaux de grès cérame",
+      "unite": "m2",
+      "attendu": "70.40",
+      "type": "reformulation",
+      "note": ""
+    },
+    {
+      "libelle": "Chape de ravoirage armée d'un treillis, 6 cm",
+      "unite": "m2",
+      "attendu": "70.50",
+      "type": "reformulation",
+      "note": ""
+    },
+    {
+      "libelle": "Carrelage mural en faïence, profilés compris",
+      "unite": "m2",
+      "attendu": "70.60",
+      "type": "reformulation",
+      "note": "« carrelage mural » = « faïence » : l'exemple du client"
+    },
+    {
+      "libelle": "Peinture sur menuiseries en bois, ponçage préalable",
+      "unite": "m2",
+      "attendu": "70.70",
+      "type": "reformulation",
+      "note": ""
+    },
+    {
+      "libelle": "Menuiserie extérieure en PVC, double vitrage",
+      "unite": "m2",
+      "attendu": "80.10",
+      "type": "reformulation",
+      "note": ""
+    },
+    {
+      "libelle": "Porte d'entrée en bois massif, quincaillerie comprise",
+      "unite": "pce",
+      "attendu": "80.20",
+      "type": "reformulation",
+      "note": ""
+    },
+    {
+      "libelle": "Garde-corps métallique thermolaqué",
+      "unite": "m",
+      "attendu": "80.30",
+      "type": "reformulation",
+      "note": ""
+    },
+    {
+      "libelle": "Descente d'eaux usées en PVC diamètre 110",
+      "unite": "m",
+      "attendu": "80.40",
+      "type": "reformulation",
+      "note": ""
+    },
+    {
+      "libelle": "Distribution sanitaire en tube multicouche",
+      "unite": "m",
+      "attendu": "80.50",
+      "type": "reformulation",
+      "note": ""
+    },
+    {
+      "libelle": "Natte d'étanchéité sous carrelage de salle d'eau",
+      "unite": "m2",
+      "attendu": "80.60",
+      "type": "reformulation",
+      "note": ""
+    },
+    {
+      "libelle": "Cuvette suspendue sur bâti-support, plaque de commande",
+      "unite": "pce",
+      "attendu": "80.70",
+      "type": "reformulation",
+      "note": ""
+    },
+    {
+      "libelle": "Essais de mise en pression et mise en service",
+      "unite": "FF",
+      "attendu": "80.80",
+      "type": "reformulation",
+      "note": ""
+    },
+    {
+      "libelle": "Point de puisance encastré 16 A avec prise de terre",
+      "unite": "pce",
+      "attendu": "90.10",
+      "type": "reformulation",
+      "note": ""
+    },
+    {
+      "libelle": "Réalisation de la prise de terre et des liaisons équipotentielles",
+      "unite": "FF",
+      "attendu": "90.20",
+      "type": "reformulation",
+      "note": ""
+    },
+    {
+      "libelle": "Visite de contrôle par organisme agréé RGIE",
+      "unite": "FF",
+      "attendu": "90.30",
+      "type": "reformulation",
+      "note": ""
+    },
+    {
+      "libelle": "Démolition de la chape existante",
+      "unite": "m2",
+      "attendu": "20.60",
+      "type": "piege",
+      "note": "ne doit PAS aller vers 70.50 (pose de chape), ×1,2 sur le prix"
+    },
+    {
+      "libelle": "Décapage de la peinture existante sur murs",
+      "unite": "m2",
+      "attendu": null,
+      "type": "piege",
+      "note": "ne doit PAS aller vers 70.10 (mise en peinture), ×… inverse"
+    },
+    {
+      "libelle": "Dépose du carrelage mural existant",
+      "unite": "m2",
+      "attendu": null,
+      "type": "piege",
+      "note": "l'exemple du client, dans l'autre sens : la dépose de faïence N'EXISTE PAS en bibliothèque. Doit rester sous le seuil."
+    },
+    {
+      "libelle": "Dépose de l'isolation existante",
+      "unite": "m2",
+      "attendu": null,
+      "type": "piege",
+      "note": "ne doit PAS aller vers 50.10 ou 50.20"
+    },
+    {
+      "libelle": "Démontage de l'échafaudage seul",
+      "unite": "m2",
+      "attendu": null,
+      "type": "piege",
+      "note": "10.20 comprend le montage ET le démontage : chiffrer le tout pour un démontage seul ferait payer deux fois"
+    },
+    {
+      "libelle": "Fourniture et pose d'un ascenseur",
+      "unite": "pce",
+      "attendu": null,
+      "type": "absent",
+      "note": ""
+    },
+    {
+      "libelle": "Curage complet du bâtiment avant travaux",
+      "unite": "FF",
+      "attendu": null,
+      "type": "absent",
+      "note": ""
+    },
+    {
+      "libelle": "Remplacement de la couverture en ardoises",
+      "unite": "m2",
+      "attendu": null,
+      "type": "absent",
+      "note": ""
+    },
+    {
+      "libelle": "Installation d'une chaudière à condensation",
+      "unite": "pce",
+      "attendu": null,
+      "type": "absent",
+      "note": ""
+    }
+  ]
+}
