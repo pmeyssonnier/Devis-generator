@@ -518,3 +518,66 @@ def test_appariement_sur_des_libelles_reformules(libelle, unite, attendu):
         {"designation": libelle, "unite": unite}, b, limite=1
     )
     assert candidats and candidats[0][0] == attendu
+
+
+# ── 9. Surcouche de session du lexique ─────────────────
+@pytest.fixture(autouse=True)
+def _lexique_propre():
+    """La surcouche est un état GLOBAL de module : sans ce nettoyage,
+    un test qui ajoute un synonyme fausserait tous les suivants."""
+    from chiffrage.lexique import vider_surcouche
+
+    vider_surcouche()
+    yield
+    vider_surcouche()
+
+
+def test_surcouche_change_l_appariement_immediatement():
+    """C'est tout l'intérêt : ajouter un terme dans l'interface et en
+    voir l'effet sans redéployer."""
+    from chiffrage import lexique
+
+    b = moteur.calcul_bordereau()
+    poste = {"designation": "Sablage des maçonneries de façade",
+             "unite": "m2"}
+
+    avant = suggestion.suggerer(poste, b, limite=1)[0][1]
+    lexique.ajouter_synonyme("sablage", "nettoyage")
+    apres = suggestion.suggerer(poste, b, limite=1)[0][1]
+
+    assert avant < 0.40 < apres
+
+
+def test_surcouche_l_emporte_sur_la_table_du_depot():
+    from chiffrage import lexique
+
+    assert lexique.canoniser("crepi") == "enduit"
+    lexique.ajouter_synonyme("crepi", "plafonnage")
+    assert lexique.canoniser("crepi") == "plafonnage"
+
+
+def test_surcouche_se_vide():
+    from chiffrage import lexique
+
+    lexique.ajouter_synonyme("sablage", "nettoyage")
+    lexique.ajouter_expression("mur de refend", "cloison")
+    lexique.vider_surcouche()
+    assert lexique.canoniser("sablage") == "sablage"
+    assert lexique.appliquer_expressions("mur de refend") == "mur de refend"
+
+
+def test_surcouche_rend_un_bloc_python_collable():
+    """L'interface ne peut pas commiter : elle rend le bloc à coller.
+    Ce bloc doit être du Python valide, sinon il ne sert à rien."""
+    import ast
+
+    from chiffrage import lexique
+
+    lexique.ajouter_synonyme("sablage", "nettoyage")
+    lexique.ajouter_expression("mur de refend", "cloison")
+    bloc = lexique.surcouche_en_python()
+
+    assert '"sablage": "nettoyage",' in bloc
+    assert '"mur de refend": "cloison",' in bloc
+    # Collé dans un dict, ça doit se parser.
+    ast.parse("SYNONYMES = {\n" + bloc.replace("#", "  #") + "\n}")

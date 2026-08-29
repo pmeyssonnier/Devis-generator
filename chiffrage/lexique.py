@@ -139,17 +139,77 @@ DEMOLITION = frozenset("""
 PENALITE_OPERATION_OPPOSEE = 0.35
 
 
+# ══════════════════════════════════════════════
+#  Surcouche de session
+# ══════════════════════════════════════════════
+#
+# L'interface doit pouvoir ajouter un synonyme et en voir l'effet
+# IMMÉDIATEMENT, sans redéploiement : on colle un libellé de CSC qui
+# n'a pas été apparié, on ajoute le mot manquant, on regarde le poste
+# remonter au premier rang. C'est le seul cycle d'essai qui rende un
+# lexique réglable par quelqu'un qui n'écrit pas de Python.
+#
+# ⚠️ CE N'EST PAS UNE PERSISTANCE. Ces ajouts vivent dans le processus
+# et disparaissent au redémarrage — et Streamlit Cloud redémarre
+# l'app tout seul. Pour qu'un synonyme survive, il doit finir dans les
+# tables ci-dessus, c'est-à-dire dans un commit. L'interface produit
+# le bloc à coller ; elle ne peut pas commiter à ta place.
+#
+# Les tables du module restent donc la source de vérité, et la
+# surcouche un brouillon.
+
+SURCOUCHE = {"expressions": {}, "synonymes": {}}
+
+
+def ajouter_expression(expression, canonique):
+    """Ajoute une expression multi-mots à la surcouche de session."""
+    SURCOUCHE["expressions"][expression.strip().lower()] = canonique.strip().lower()
+
+
+def ajouter_synonyme(variante, canonique):
+    """Ajoute un synonyme mot à mot à la surcouche de session."""
+    SURCOUCHE["synonymes"][variante.strip().lower()] = canonique.strip().lower()
+
+
+def vider_surcouche():
+    """Revient au lexique du dépôt seul."""
+    SURCOUCHE["expressions"].clear()
+    SURCOUCHE["synonymes"].clear()
+
+
+def surcouche_en_python():
+    """Rend les ajouts de session sous forme de bloc à coller dans ce
+    fichier — le seul moyen de les rendre permanents."""
+    lignes = []
+    if SURCOUCHE["expressions"]:
+        lignes.append("# À ajouter dans EXPRESSIONS :")
+        lignes += [f'    "{k}": "{v}",'
+                    for k, v in sorted(SURCOUCHE["expressions"].items())]
+    if SURCOUCHE["synonymes"]:
+        if lignes:
+            lignes.append("")
+        lignes.append("# À ajouter dans SYNONYMES :")
+        lignes += [f'    "{k}": "{v}",'
+                    for k, v in sorted(SURCOUCHE["synonymes"].items())]
+    return "\n".join(lignes)
+
+
 def appliquer_expressions(texte):
     """Traduit les expressions multi-mots. Texte déjà sans accents."""
-    for expression, canonique in EXPRESSIONS.items():
-        if expression in texte:
-            texte = texte.replace(expression, canonique)
+    for table in (EXPRESSIONS, SURCOUCHE["expressions"]):
+        for expression, canonique in table.items():
+            if expression in texte:
+                texte = texte.replace(expression, canonique)
     return texte
 
 
 def canoniser(mot):
-    """Ramène un mot à sa forme de bibliothèque ('crepi' -> 'enduit')."""
-    return SYNONYMES.get(mot, mot)
+    """Ramène un mot à sa forme de bibliothèque ('crepi' -> 'enduit').
+
+    La surcouche de session l'emporte sur la table du dépôt : c'est ce
+    qui permet d'essayer une correction avant de la commiter.
+    """
+    return SURCOUCHE["synonymes"].get(mot, SYNONYMES.get(mot, mot))
 
 
 def est_demolition(mots):

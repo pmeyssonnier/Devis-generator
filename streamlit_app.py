@@ -32,6 +32,16 @@ from chiffrage.bibliotheque import (
     PARAMS,
 )
 from chiffrage.devis_xlsx import exporter_devis
+from chiffrage.lexique import (
+    DEMOLITION,
+    EXPRESSIONS,
+    SURCOUCHE,
+    SYNONYMES,
+    ajouter_expression,
+    ajouter_synonyme,
+    surcouche_en_python,
+    vider_surcouche,
+)
 from chiffrage.gen_metre import generer_metre
 from chiffrage.metre_io import (
     lire_metre,
@@ -46,7 +56,7 @@ from chiffrage.moteur import (
     devis,
     fiche_prix,
 )
-from chiffrage.suggestion import proposer_mapping
+from chiffrage.suggestion import est_demolition, normaliser, proposer_mapping, suggerer
 
 st.set_page_config(page_title="Chiffrage BAG BATTER", page_icon="🧱",
                     layout="wide")
@@ -140,9 +150,10 @@ with st.sidebar:
 #  1. Répondre à un métré imposé
 # ══════════════════════════════════════════════════
 
-onglet_metre, onglet_devis, onglet_biblio, onglet_calib = st.tabs(
+(onglet_metre, onglet_devis, onglet_biblio,
+ onglet_lexique, onglet_calib) = st.tabs(
     ["📥 Répondre à un métré", "🧾 Devis client",
-     "📚 Bibliothèque", "🎯 Calibration"]
+     "📚 Bibliothèque", "🔤 Lexique", "🎯 Calibration"]
 )
 
 
@@ -205,7 +216,11 @@ def _repondre_a_un_metre(params):
             return
 
         # ── Appariement : recalculé si le fichier change ──────────────
-        signature = (fichier.name, len(fichier.getvalue()), len(postes))
+        # La version du lexique entre dans la signature : ajouter un
+        # synonyme dans l'onglet Lexique doit refaire l'appariement,
+        # sinon l'essai n'a aucun effet visible ici.
+        signature = (fichier.name, len(fichier.getvalue()), len(postes),
+                      st.session_state.get("lexique_version", 0))
         if st.session_state.get("signature") != signature:
             st.session_state.signature = signature
             st.session_state.mapping = {
@@ -573,7 +588,202 @@ with onglet_biblio:
     st.code(fiche_prix(code_fiche), language="text")
 
 # ══════════════════════════════════════════════════
-#  4. Calibration
+#  4. Lexique métier
+# ══════════════════════════════════════════════════
+
+with onglet_lexique:
+    st.header("Lexique métier")
+    st.markdown(
+        "Un pouvoir adjudicateur n'écrit pas « faïence » : il écrit "
+        "« carrelage mural ». Ce lexique traduit son vocabulaire vers "
+        "celui de la bibliothèque, **avant** toute comparaison de "
+        "libellés. C'est lui qui fait la différence entre un poste "
+        "apparié et un poste laissé sans prix."
+    )
+
+    b = _bordereau()
+
+    # ── Banc d'essai ──────────────────────────
+    st.subheader("Banc d'essai")
+    st.caption(
+        "Colle ici un libellé qui n'a pas été apparié, et regarde ce que "
+        "l'outil en retient. C'est le cycle qui permet de régler le "
+        "lexique sans écrire de Python."
+    )
+
+    col_lib, col_unite = st.columns([4, 1])
+    with col_lib:
+        essai = st.text_input(
+            "Libellé du poste",
+            "Sablage des maçonneries de façade",
+            label_visibility="collapsed",
+            placeholder="Libellé tel qu'il figure dans le métré",
+        )
+    with col_unite:
+        unite_essai = st.selectbox(
+            "Unité",
+            sorted({ligne["unite_ouv"] for ligne in b.values()}),
+            label_visibility="collapsed",
+        )
+
+    if essai.strip():
+        mots = normaliser(essai)
+        avec_operation = normaliser(essai, garder_operation=True)
+
+        st.markdown(
+            "**Ce que l'outil retient :** "
+            + (" · ".join(f"`{m}`" for m in mots) or "_rien_")
+            + ("  \n**Opération :** dépose"
+               if est_demolition(avec_operation)
+               else "  \n**Opération :** mise en œuvre")
+        )
+        if not mots:
+            st.warning(
+                "Aucun mot significatif : tous ont été écartés comme mots "
+                "vides de métré. Aucun appariement n'est possible.",
+                icon="⚠️",
+            )
+
+        candidats = suggerer(
+            {"designation": essai, "unite": unite_essai}, b, limite=5
+        )
+        if not candidats:
+            st.error(
+                f"Aucun ouvrage en « {unite_essai} » : ce n'est pas un "
+                f"problème de vocabulaire, il manque l'ouvrage dans la "
+                f"bibliothèque.",
+                icon="🛑",
+            )
+        else:
+            st.dataframe(
+                [
+                    {
+                        "Score": s,
+                        "": "✅" if s >= SEUIL_CONFIANCE
+                             else ("🟡" if s >= SEUIL_SUGGESTION else "⚪"),
+                        "Code": c,
+                        "Ouvrage": b[c]["libelle_ouv"],
+                        "PU": b[c]["pu_vente"],
+                    }
+                    for c, s in candidats
+                ],
+                hide_index=True,
+                width="stretch",
+                column_config={
+                    "Score": st.column_config.ProgressColumn(
+                        "Score", min_value=0.0, max_value=1.0, format="%.2f"),
+                    "PU": st.column_config.NumberColumn(format="%.2f €"),
+                },
+            )
+            st.caption(
+                f"🟡 au-dessus de {SEUIL_SUGGESTION:.2f} : proposé comme "
+                f"suggestion · ✅ au-dessus de {SEUIL_CONFIANCE:.2f} : "
+                f"présenté comme solide — ce qui ne veut pas dire juste. "
+                f"⚪ en dessous : l'outil se tait."
+            )
+
+    # ── Enrichir ───────────────────────────────
+    st.subheader("Ajouter un terme")
+    st.caption(
+        "L'ajout prend effet immédiatement : relance le banc d'essai "
+        "ci-dessus pour en voir l'effet, et l'appariement de l'onglet "
+        "« métré » est refait lui aussi."
+    )
+
+    col_var, col_canon, col_bouton = st.columns([2, 2, 1])
+    with col_var:
+        variante = st.text_input(
+            "Terme du cahier des charges",
+            placeholder="sablage  ·  carrelage mural",
+        )
+    with col_canon:
+        canonique = st.text_input(
+            "Terme de la bibliothèque",
+            placeholder="nettoyage  ·  faience",
+        )
+    with col_bouton:
+        st.write("")
+        ajouter = st.button(
+            "➕ Ajouter", width="stretch",
+            disabled=not (variante.strip() and canonique.strip()),
+        )
+
+    if ajouter:
+        # Une expression multi-mots se traduit AVANT la découpe en mots,
+        # un mot seul APRÈS : ce ne sont pas les mêmes tables.
+        if " " in variante.strip():
+            ajouter_expression(variante, canonique)
+        else:
+            ajouter_synonyme(variante, canonique)
+        st.session_state.lexique_version = (
+            st.session_state.get("lexique_version", 0) + 1
+        )
+        st.rerun()
+
+    # ── Ce qui a été ajouté dans la session ──────────
+    ajouts = dict(SURCOUCHE["expressions"], **SURCOUCHE["synonymes"])
+    if ajouts:
+        st.warning(
+            f"**{len(ajouts)} terme(s) ajouté(s) dans cette session.** "
+            "Ils agissent tout de suite, mais **ils ne survivront pas au "
+            "redémarrage de l'app** — et Streamlit Cloud la redémarre "
+            "tout seul. Pour les garder, colle le bloc ci-dessous dans "
+            "`chiffrage/lexique.py` et commite.",
+            icon="⚠️",
+        )
+        st.code(surcouche_en_python(), language="python")
+        col_dl, col_raz = st.columns(2)
+        with col_dl:
+            st.download_button(
+                "⬇️ Télécharger le bloc",
+                surcouche_en_python(),
+                file_name="lexique_ajouts.py",
+                mime="text/x-python",
+                width="stretch",
+            )
+        with col_raz:
+            if st.button("🗑️ Oublier ces ajouts", width="stretch"):
+                vider_surcouche()
+                st.session_state.lexique_version = (
+                    st.session_state.get("lexique_version", 0) + 1
+                )
+                st.rerun()
+
+    # ── Le lexique du dépôt ────────────────────
+    st.subheader("Le lexique du dépôt")
+    filtre = st.text_input("Filtrer", placeholder="faience, enduit…",
+                           label_visibility="collapsed")
+
+    entrees = (
+        [("expression", k, v) for k, v in EXPRESSIONS.items()]
+        + [("mot", k, v) for k, v in SYNONYMES.items() if v]
+    )
+    if filtre.strip():
+        motif = filtre.strip().lower()
+        entrees = [e for e in entrees if motif in f"{e[1]} {e[2]}"]
+
+    st.dataframe(
+        [{"Type": t, "Terme du CSC": k, "→ Bibliothèque": v}
+         for t, k, v in sorted(entrees, key=lambda e: (e[0], e[1]))],
+        hide_index=True, width="stretch", height=260,
+    )
+
+    with st.expander("Marqueurs de démolition"):
+        st.markdown(
+            "Ces mots ne sont **pas** comparés comme les autres : ils sont "
+            "retirés du libellé et traités comme une dimension à part, "
+            "comme l'unité. Sans ça, « dépose du carrelage mural » "
+            "s'appariait à « dépose de plafond » — deux fois le mot "
+            "« dépose », et rien d'autre en commun. Une dépose comparée à "
+            "une pose est fortement pénalisée, mais **pas éliminée** : "
+            "l'unité est déclarée dans le métré, l'opération n'est "
+            "qu'inférée de mots."
+        )
+        st.write(" · ".join(f"`{m}`" for m in sorted(DEMOLITION)))
+
+
+# ══════════════════════════════════════════════════
+#  5. Calibration
 # ══════════════════════════════════════════════════
 
 with onglet_calib:

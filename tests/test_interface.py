@@ -37,10 +37,10 @@ def app(AppTest):
 
 
 def test_app_demarre_sans_erreur(app):
-    assert len(app.tabs) == 4
+    assert len(app.tabs) == 5
 
 
-def test_les_quatre_onglets_s_affichent(app):
+def test_les_cinq_onglets_s_affichent(app):
     """Garde-fou du `st.stop()` : si un onglet arrête le script, les
     suivants n'ont plus ni tableau ni métrique."""
     labels = {m.label for m in app.metric}
@@ -104,3 +104,28 @@ def test_le_total_de_l_interface_egale_celui_du_moteur(app, tmp_path):
         total_affiche.removesuffix(" €").replace(".", "").replace(",", ".")
     )
     assert valeur == pytest.approx(attendu["total_ht"], abs=0.01)
+
+
+def test_onglet_lexique_permet_d_ajouter_un_terme(app):
+    """Le cycle qui rend le lexique réglable sans écrire de Python :
+    on colle un libellé mal apparié, on ajoute le mot manquant, on
+    voit le score bouger — et l'app rend le bloc à commiter."""
+    from chiffrage.lexique import vider_surcouche
+
+    try:
+        champs = {t.label: t for t in app.text_input}
+        champs["Terme du cahier des charges"].set_value("sablage").run()
+        champs["Terme de la bibliothèque"].set_value("nettoyage").run()
+
+        ajouter = [b for b in app.button if "Ajouter" in b.label]
+        assert ajouter and not ajouter[0].disabled
+        ajouter[0].click().run()
+        assert not app.exception, [e.value for e in app.exception]
+
+        # L'app doit DIRE que ça ne survivra pas au redémarrage.
+        assert any("session" in w.value and "redémarrage" in w.value
+                    for w in app.warning)
+        # …et rendre le bloc à coller dans le dépôt.
+        assert any('"sablage": "nettoyage",' in c.value for c in app.code)
+    finally:
+        vider_surcouche()

@@ -116,6 +116,15 @@ devient « PIR ». Déterministe et relisible — là où une similarité
 cosinus est un nombre qu'on subit, une entrée de lexique est une
 décision qu'on relit.
 
+**L'onglet « Lexique » de l'interface le rend réglable sans Python.**
+On colle un libellé qui n'a pas été apparié, l'app montre ce qu'elle
+en a retenu (les mots gardés, l'opération détectée) et les cinq
+candidats avec leur score ; on ajoute le terme manquant et on voit le
+poste remonter au premier rang, immédiatement. L'ajout vaut pour la
+session : l'app rend le bloc Python à coller dans `lexique.py` pour le
+rendre permanent — elle ne peut pas commiter à ta place, et elle le
+dit.
+
 **L'opération est une facette, pas un mot.** « Dépose de carrelage » et
 « Pose de carrelage » ne diffèrent que par un mot, et ce sont deux
 travaux opposés à des prix qui vont du simple au triple. Les verbes de
@@ -218,7 +227,8 @@ une cellule Colab.
 │   ├── devis_xlsx.py         → devis client prêt à envoyer         (openpyxl)
 │   └── __main__.py           → ligne de commande
 ├── streamlit_app.py        → interface web : dépôt du métré, appariement
-│                               des postes à l'écran, téléchargement
+│                               des postes à l'écran, réglage du lexique,
+│                               téléchargement
 ├── evaluation/              → jeu d'épreuve de l'appariement + mesure
 ├── colab/                   → notebook Colab : monte Drive, range les
 │                               fichiers dans BAG_BATTER/Chiffrage/
@@ -391,7 +401,7 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-42 tests. Ceux de la chaîne Excel se skippent sans openpyxl, ceux de
+53 tests. Ceux de la chaîne Excel se skippent sans openpyxl, ceux de
 l'interface sans streamlit.
 
 L'interface est testée par `AppTest` de Streamlit, qui exécute vraiment le
