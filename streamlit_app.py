@@ -42,6 +42,7 @@ from chiffrage.lexique import (
     adopter_local,
     ajouter_expression,
     ajouter_synonyme,
+    est_demolition,
     surcouche_en_python,
     vider_surcouche,
 )
@@ -59,7 +60,7 @@ from chiffrage.moteur import (
     devis,
     fiche_prix,
 )
-from chiffrage.suggestion import est_demolition, normaliser, proposer_mapping, suggerer
+from chiffrage.suggestion import normaliser, proposer_mapping, suggerer
 
 st.set_page_config(page_title="Chiffrage BAG BATTER", page_icon="🧱",
                     layout="wide")
