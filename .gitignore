@@ -1,0 +1,22 @@
+# ── Python ──────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+
+# ── Classeurs produits par l'outil — régénérables, jamais suivis ────────────
+# La source de vérité est le code (chiffrage/bibliotheque.py), pas le fichier
+# Excel : suivre les .xlsx exportés amènerait deux versions divergentes des
+# mêmes prix. Un métré REÇU d'un pouvoir adjudicateur ne va pas non plus ici
+# (il part dans Drive/02_metres_recus), pas plus qu'une offre remise.
+*.xlsx
+*.xlsm
+
+# ── Divers ──────────────────────────────────────────────────────────────────
+.DS_Store
+*.swp
+*.log
+*.tmp

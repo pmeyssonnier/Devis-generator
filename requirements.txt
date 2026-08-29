@@ -1,0 +1,5 @@
+# Le moteur de calcul (chiffrage/bibliotheque.py, chiffrage/moteur.py) est en
+# Python pur : aucune dépendance. Seule la chaîne Excel — export de la
+# bibliothèque, génération de métré, remplissage d'une offre — a besoin
+# d'openpyxl.
+openpyxl==3.1.5

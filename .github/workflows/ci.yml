@@ -1,0 +1,34 @@
+# Contrôle qualité avant fusion : lint (ruff) puis tests (pytest).
+# openpyxl est installé via requirements-dev.txt, sans quoi les tests de la
+# chaîne Excel se contenteraient de se skipper.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  qualite:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Installer les dépendances
+        run: pip install -r requirements-dev.txt
+
+      - name: Lint (ruff)
+        run: ruff check .
+
+      - name: Tests (pytest)
+        run: pytest
+
+      # `offre` sort en code 1 tant qu'il reste des postes sans prix (13
+      # aujourd'hui) : c'est le comportement voulu, pas un échec de build.
+      # La chaîne complète est vérifiée par tests/test_chiffrage.py.
+      - name: Cohérence de la bibliothèque
+        run: python -m chiffrage controle
