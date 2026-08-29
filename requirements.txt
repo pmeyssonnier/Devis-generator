@@ -1,5 +1,12 @@
-# Le moteur de calcul (chiffrage/bibliotheque.py, chiffrage/moteur.py) est en
-# Python pur : aucune dépendance. Seule la chaîne Excel — export de la
-# bibliothèque, génération de métré, remplissage d'une offre — a besoin
-# d'openpyxl.
+# Dépendances de l'application. **Streamlit Cloud lit CE fichier.**
+#
+# Le moteur de calcul (chiffrage/bibliotheque.py, chiffrage/moteur.py) est
+# en Python pur : il n'a besoin de rien. openpyxl ne sert qu'à la chaîne
+# Excel, streamlit qu'à l'interface web.
 openpyxl==3.1.5
+
+# Non épinglé : Streamlit Cloud met sa plateforme à jour de son côté, et
+# figer une version finit par empêcher le déploiement. Le plancher 1.62
+# est la version sur laquelle l'interface a été vérifiée — c'est aussi
+# celle qui remplace `use_container_width` par `width`.
+streamlit>=1.62

@@ -66,7 +66,44 @@ et des rendements. Point d'entrée : `python -m chiffrage calibration`.
 
 ## Utilisation
 
-### Depuis le téléphone — Colab (le plus simple)
+### L'interface web (le plus simple)
+
+```bash
+streamlit run streamlit_app.py       # en local
+```
+
+Déposer le métré Excel reçu, relire les correspondances proposées,
+télécharger l'offre. Aucune commande Python.
+
+**Déployer sur Streamlit Community Cloud** (gratuit) : sur
+[share.streamlit.io](https://share.streamlit.io), *New app* → ce dépôt →
+branche `main` → fichier principal `streamlit_app.py`. Chaque push met
+l'app à jour. Ça donne une URL utilisable depuis le téléphone.
+
+L'interface apporte ce que la ligne de commande ne pouvait pas :
+**l'appariement des postes à l'écran**. `MAPPING` est à refaire à chaque
+marché — les codes appartiennent au pouvoir adjudicateur — et c'était la
+seule étape qui obligeait encore à éditer du Python. L'outil propose une
+correspondance par ouvrage, à partir du libellé ; l'humain tranche.
+
+Deux règles y sont gravées :
+
+- **l'unité est éliminatoire, pas départageante** — un poste imposé au
+  mètre courant ne se voit jamais proposer un ouvrage au m², quelle que
+  soit la ressemblance des libellés. Le prix serait faux d'un facteur
+  inconnu, et ça ne se verrait qu'à la facturation ;
+- **le score n'est pas une probabilité** — c'est une ressemblance de
+  libellés, sur un vocabulaire où « dépose » et « pose » ne diffèrent que
+  d'une lettre. Un score élevé dit « regarde ici d'abord », jamais
+  « c'est bon ».
+
+Sur des libellés réécrits comme le ferait une vraie commune,
+l'appariement tombe juste **du premier coup dans ~60 % des cas**, et
+place la bonne réponse **dans les trois premières dans ~90 %**. La
+correspondance obtenue se télécharge en `.json` et se recharge au marché
+suivant : une commune réutilise ses propres codes.
+
+### Depuis le téléphone — Colab
 
 Ouvre **[`colab/chiffrage_bagbatter.ipynb`](colab/chiffrage_bagbatter.ipynb)**
 dans Google Colab : il installe l'outil, monte ton Drive, crée l'arborescence
@@ -126,6 +163,7 @@ exporter_devis(d, "devis_2026-042.xlsx",
 | `moteur.py` | calcul du bordereau, devis, fiche de prix, calibration, contrôle de cohérence | — |
 | `export_xlsx.py` | bibliothèque → Excel 6 onglets, **avec vraies formules** | openpyxl |
 | `devis_xlsx.py` | devis client prêt à envoyer : en-tête, postes par lot, TVA, conditions, signature | openpyxl |
+| `suggestion.py` | appariement poste imposé → ouvrage, à partir du libellé | — |
 | `gen_metre.py` | métré de marché public fictif (49 postes, 10 lots) pour s'entraîner | openpyxl |
 | `metre_io.py` | lecture d'un métré imposé + remplissage de l'offre | openpyxl |
 | `__main__.py` | ligne de commande | — |
@@ -147,9 +185,11 @@ une cellule Colab.
 │   ├── export_xlsx.py        → bibliothèque -> Excel 6 onglets     (openpyxl)
 │   ├── devis_xlsx.py         → devis client prêt à envoyer         (openpyxl)
 │   └── __main__.py           → ligne de commande
+├── streamlit_app.py        → interface web : dépôt du métré, appariement
+│                               des postes à l'écran, téléchargement
 ├── colab/                   → notebook Colab : monte Drive, range les
 │                               fichiers dans BAG_BATTER/Chiffrage/
-├── tests/test_chiffrage.py   → 31 tests (13 se skippent sans openpyxl)
+├── tests/                   → 42 tests (se skippent sans openpyxl/streamlit)
 ├── requirements.txt          → openpyxl (chaîne Excel uniquement)
 ├── requirements-dev.txt      → + pytest, ruff
 ├── ruff.toml · pytest.ini    → lint + config de tests
@@ -277,8 +317,17 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-31 tests. Les 13 tests de la chaîne Excel se skippent proprement si openpyxl
-n'est pas installé.
+42 tests. Ceux de la chaîne Excel se skippent sans openpyxl, ceux de
+l'interface sans streamlit.
+
+L'interface est testée par `AppTest` de Streamlit, qui exécute vraiment le
+script : dépôt d'un métré, appariement, clic sur « Chiffrer », offre
+téléchargeable. Il a déjà attrapé deux défauts qu'aucune relecture n'aurait
+vus — un `icon=` refusé par Streamlit qui faisait planter l'app au
+chargement, et un `st.stop()` qui arrêtait le script **entier**, si bien
+que trois onglets sur quatre ne s'affichaient jamais. Un test vérifie
+aussi que le total affiché à l'écran égale celui du moteur : deux vérités
+sur un prix, c'est une offre fausse tôt ou tard.
 
 Trois d'entre eux portent sur le notebook Colab : JSON valide, cellules qui
 compilent, et surtout **chaque `from chiffrage.x import y` du notebook doit
