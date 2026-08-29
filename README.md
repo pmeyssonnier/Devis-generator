@@ -66,6 +66,22 @@ et des rendements. Point d'entrée : `python -m chiffrage calibration`.
 
 ## Utilisation
 
+### Depuis le téléphone — Colab (le plus simple)
+
+Ouvre **[`colab/chiffrage_bagbatter.ipynb`](colab/chiffrage_bagbatter.ipynb)**
+dans Google Colab : il installe l'outil, monte ton Drive, crée l'arborescence
+`BAG_BATTER/Chiffrage/` et **y écrit directement les fichiers produits**,
+horodatés. Neuf sections : contrôle et calibration · export de la
+bibliothèque · devis client · réponse à un métré imposé · métré
+d'entraînement · consultation des prix.
+
+C'est la seule voie où les documents atterrissent dans Drive sans manipulation.
+
+### En ligne de commande
+
+Les fichiers sortent **dans le dossier où tu lances la commande** — rien
+n'est envoyé vers Drive.
+
 ```bash
 pip install -r requirements.txt                  # openpyxl, pour la chaîne Excel
 
@@ -131,7 +147,9 @@ une cellule Colab.
 │   ├── export_xlsx.py        → bibliothèque -> Excel 6 onglets     (openpyxl)
 │   ├── devis_xlsx.py         → devis client prêt à envoyer         (openpyxl)
 │   └── __main__.py           → ligne de commande
-├── tests/test_chiffrage.py   → 28 tests (13 se skippent sans openpyxl)
+├── colab/                   → notebook Colab : monte Drive, range les
+│                               fichiers dans BAG_BATTER/Chiffrage/
+├── tests/test_chiffrage.py   → 31 tests (13 se skippent sans openpyxl)
 ├── requirements.txt          → openpyxl (chaîne Excel uniquement)
 ├── requirements-dev.txt      → + pytest, ruff
 ├── ruff.toml · pytest.ini    → lint + config de tests
@@ -259,5 +277,11 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-28 tests. Les 13 tests de la chaîne Excel se skippent proprement si openpyxl
+31 tests. Les 13 tests de la chaîne Excel se skippent proprement si openpyxl
 n'est pas installé.
+
+Trois d'entre eux portent sur le notebook Colab : JSON valide, cellules qui
+compilent, et surtout **chaque `from chiffrage.x import y` du notebook doit
+résoudre**. Rien n'exécute le notebook en CI — sans ce dernier test, un
+renommage dans `chiffrage/` le casserait en silence, et ça ne se verrait
+qu'au moment d'ouvrir Colab pour répondre à un marché.

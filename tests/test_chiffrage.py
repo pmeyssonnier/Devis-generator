@@ -386,3 +386,56 @@ def test_devis_client_refuse_un_devis_vide(tmp_path, openpyxl_dispo):
 
     with pytest.raises(ValueError):
         exporter_devis(moteur.devis("vide", []), str(tmp_path / "devis.xlsx"))
+
+
+# ── 7. Notebook Colab ─────────────────────────────────────────────
+#
+# Le notebook est le point d'entrée réel du chef d'entreprise (il travaille
+# depuis mobile, via Colab). Rien ne l'exécute en CI : sans ces tests, un
+# renommage dans `chiffrage/` le casserait en silence et personne ne le
+# saurait avant qu'il ouvre Colab pour répondre à un marché.
+import json
+from pathlib import Path
+
+NOTEBOOK = Path(__file__).resolve().parent.parent / "colab" / "chiffrage_bagbatter.ipynb"
+
+
+def _cellules_de_code():
+    nb = json.loads(NOTEBOOK.read_text(encoding="utf-8"))
+    return [
+        "".join(c["source"])
+        for c in nb["cells"]
+        if c["cell_type"] == "code"
+    ]
+
+
+def test_notebook_est_un_json_valide():
+    nb = json.loads(NOTEBOOK.read_text(encoding="utf-8"))
+    assert nb["nbformat"] == 4
+    assert len(_cellules_de_code()) >= 10
+
+
+def test_cellules_du_notebook_compilent():
+    """Syntaxe valide — hors cellules à magies shell (!pip, !git), qui ne
+    sont pas du Python et ne compilent que dans IPython."""
+    for i, source in enumerate(_cellules_de_code(), start=1):
+        if any(ligne.lstrip().startswith("!") for ligne in source.splitlines()):
+            continue
+        compile(source, f"<cellule {i}>", "exec")
+
+
+def test_symboles_importes_par_le_notebook_existent():
+    """Le vrai garde-fou : chaque `from chiffrage.x import y` du notebook
+    doit résoudre. C'est ce qui casse quand on renomme une fonction."""
+    import importlib
+    import re
+
+    for source in _cellules_de_code():
+        for module, noms in re.findall(
+            r"from (chiffrage[\w.]*) import ([^\n(]+|\([^)]*\))", source
+        ):
+            mod = importlib.import_module(module)
+            for nom in noms.strip("()").replace("\n", " ").split(","):
+                nom = nom.strip().split(" as ")[0].strip()
+                if nom:
+                    assert hasattr(mod, nom), f"{module}.{nom} n'existe pas"
