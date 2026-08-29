@@ -624,9 +624,16 @@ with onglet_lexique:
             placeholder="Libellé tel qu'il figure dans le métré",
         )
     with col_unite:
+        # Le m2 par défaut, et non le premier par ordre alphabétique :
+        # 29 des 49 ouvrages y sont, et surtout le libellé prérempli
+        # est un travail de façade. Avec « FF » en tête, le banc
+        # d'essai s'ouvrait sur cinq forfaits sans rapport avec
+        # l'exemple — de quoi croire l'outil cassé au premier regard.
+        unites = sorted({ligne["unite_ouv"] for ligne in b.values()})
         unite_essai = st.selectbox(
             "Unité",
-            sorted({ligne["unite_ouv"] for ligne in b.values()}),
+            unites,
+            index=unites.index("m2") if "m2" in unites else 0,
             label_visibility="collapsed",
         )
 

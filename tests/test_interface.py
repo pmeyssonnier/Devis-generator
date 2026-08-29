@@ -142,3 +142,17 @@ def test_app_tourne_sans_fichier_de_secrets(app):
     assert not app.exception
     assert any("Aucun jeton GitHub configuré" in c.value
                for c in app.caption) or True   # visible seulement si ajouts
+
+
+def test_banc_d_essai_s_ouvre_sur_un_exemple_coherent(app):
+    """Le libellé prérempli est un travail de façade, au m2. Avec
+    l'unité par défaut sur « FF » (premier par ordre alphabétique),
+    le banc d'essai s'ouvrait sur cinq forfaits sans rapport : de
+    quoi croire l'outil cassé au premier regard."""
+    tableaux = [d.value for d in app.dataframe
+                 if "Score" in list(d.value.columns)]
+    assert tableaux, "le banc d'essai n'affiche aucun tableau"
+    premier = tableaux[0]
+    # L'exemple doit trouver « Nettoyage haute pression de façade ».
+    assert premier.iloc[0]["Code"] == "40.10"
+    assert premier.iloc[0]["Score"] > 0.30
