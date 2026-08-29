@@ -162,12 +162,12 @@ SURCOUCHE = {"expressions": {}, "synonymes": {}}
 
 
 def ajouter_expression(expression, canonique):
-    """Ajoute une expression multi-mots à la surcouche de session."""
+    """Ajoute une expression multi-mots à la surcouche vivante."""
     SURCOUCHE["expressions"][expression.strip().lower()] = canonique.strip().lower()
 
 
 def ajouter_synonyme(variante, canonique):
-    """Ajoute un synonyme mot à mot à la surcouche de session."""
+    """Ajoute un synonyme mot à mot à la surcouche vivante."""
     SURCOUCHE["synonymes"][variante.strip().lower()] = canonique.strip().lower()
 
 
@@ -178,7 +178,7 @@ def vider_surcouche():
 
 
 def surcouche_en_python():
-    """Rend les ajouts de session sous forme de bloc à coller dans ce
+    """Rend les ajouts vivants sous forme de bloc à coller dans ce
     fichier — le seul moyen de les rendre permanents."""
     lignes = []
     if SURCOUCHE["expressions"]:
@@ -206,7 +206,7 @@ def appliquer_expressions(texte):
 def canoniser(mot):
     """Ramène un mot à sa forme de bibliothèque ('crepi' -> 'enduit').
 
-    La surcouche de session l'emporte sur la table du dépôt : c'est ce
+    La surcouche vivante l'emporte sur la table du dépôt : c'est ce
     qui permet d'essayer une correction avant de la commiter.
     """
     return SURCOUCHE["synonymes"].get(mot, SYNONYMES.get(mot, mot))

@@ -122,9 +122,14 @@ def test_onglet_lexique_permet_d_ajouter_un_terme(app):
         ajouter[0].click().run()
         assert not app.exception, [e.value for e in app.exception]
 
-        # L'app doit DIRE que ça ne survivra pas au redémarrage.
-        assert any("session" in w.value and "redémarrage" in w.value
-                    for w in app.warning)
+        # L'app doit DIRE les deux limites : portée (tout le monde,
+        # pas « ma session ») et durée (jusqu'au redémarrage).
+        alertes = [w.value for w in app.warning]
+        assert any("app entière" in a and "redémarrage" in a
+                    for a in alertes)
+        assert not any("cette session" in a for a in alertes), (
+            "« session » est faux : la surcouche est globale au processus"
+        )
         # …et rendre le bloc à coller dans le dépôt.
         assert any('"sablage": "nettoyage",' in c.value for c in app.code)
     finally:

@@ -685,9 +685,10 @@ with onglet_lexique:
     # ── Enrichir ───────────────────────────────
     st.subheader("Ajouter un terme")
     st.caption(
-        "L'ajout prend effet immédiatement : relance le banc d'essai "
-        "ci-dessus pour en voir l'effet, et l'appariement de l'onglet "
-        "« métré » est refait lui aussi."
+        "L'ajout prend effet immédiatement — pour **tous** les "
+        "utilisateurs de l'app, pas seulement toi. Relance le banc "
+        "d'essai ci-dessus pour en voir l'effet ; l'appariement de "
+        "l'onglet « métré » est refait lui aussi."
     )
 
     col_var, col_canon, col_bouton = st.columns([2, 2, 1])
@@ -720,15 +721,16 @@ with onglet_lexique:
         )
         st.rerun()
 
-    # ── Ce qui a été ajouté dans la session ──────────
+    # ── Ce qui a été ajouté à chaud ────────────────
     ajouts = dict(SURCOUCHE["expressions"], **SURCOUCHE["synonymes"])
     if ajouts:
         st.warning(
-            f"**{len(ajouts)} terme(s) ajouté(s) dans cette session.** "
-            "Ils agissent tout de suite, mais **ils ne survivront pas au "
-            "redémarrage de l'app** — et Streamlit Cloud la redémarre "
-            "tout seul. Pour les garder, colle le bloc ci-dessous dans "
-            "`chiffrage/lexique.py` et commite.",
+            f"**{len(ajouts)} terme(s) ajouté(s) à chaud.** Ils valent "
+            "pour **l'app entière et tous ses utilisateurs**, pas pour "
+            "toi seul — et **ils ne survivront pas au redémarrage**, "
+            "que Streamlit Cloud déclenche tout seul après quelques "
+            "heures d'inactivité. Pour les garder, colle le bloc "
+            "ci-dessous dans `chiffrage/lexique.py` et commite.",
             icon="⚠️",
         )
         st.code(surcouche_en_python(), language="python")
@@ -742,7 +744,8 @@ with onglet_lexique:
                 width="stretch",
             )
         with col_raz:
-            if st.button("🗑️ Oublier ces ajouts", width="stretch"):
+            if st.button("🗑️ Oublier ces ajouts", width="stretch",
+                            help="Pour tout le monde, comme l'ajout."):
                 vider_surcouche()
                 st.session_state.lexique_version = (
                     st.session_state.get("lexique_version", 0) + 1

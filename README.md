@@ -120,10 +120,14 @@ décision qu'on relit.
 On colle un libellé qui n'a pas été apparié, l'app montre ce qu'elle
 en a retenu (les mots gardés, l'opération détectée) et les cinq
 candidats avec leur score ; on ajoute le terme manquant et on voit le
-poste remonter au premier rang, immédiatement. L'ajout vaut pour la
-session : l'app rend le bloc Python à coller dans `lexique.py` pour le
-rendre permanent — elle ne peut pas commiter à ta place, et elle le
-dit.
+poste remonter au premier rang, immédiatement.
+
+Deux limites, que l'app affiche plutôt que de les laisser découvrir :
+l'ajout vaut pour **l'app entière et tous ses utilisateurs** (la
+surcouche est globale au processus, et un serveur Streamlit sert tous
+ses visiteurs depuis un seul processus), et il **ne survit pas au
+redémarrage**. L'app rend le bloc Python à coller dans `lexique.py`
+pour le rendre permanent — elle ne peut pas commiter à ta place.
 
 **L'opération est une facette, pas un mot.** « Dépose de carrelage » et
 « Pose de carrelage » ne diffèrent que par un mot, et ce sont deux
