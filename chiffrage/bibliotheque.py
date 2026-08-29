@@ -9,10 +9,15 @@
 Le notebook Colab d'origine a été perdu ; ce fichier en est une
 RECONSTRUCTION à partir du seul document de reprise (CLAUDE.md). La STRUCTURE
 est fidèle (mêmes tables, mêmes clés, même formule de prix, même coefficient
-K = 1,3324, mêmes 36 ouvrages sur 8 lots, mêmes 13 postes non couverts) mais
+K = 1,3324, mêmes 36 ouvrages d'origine sur 8 lots) mais
 les VALEURS NUMÉRIQUES — prix unitaires des ressources et surtout rendements
 main-d'œuvre en h/unité — ont dû être re-saisies à partir d'ordres de grandeur
 du marché belge 2026.
+
+Treize ouvrages ont ensuite été AJOUTÉS (lots 10 à 90, voir
+OUVRAGES_A_VALIDER) pour couvrir les postes qui restaient sans prix et
+rendaient toute offre irrégulière. Ils n'ont jamais existé dans la
+bibliothèque d'origine : leurs rendements sont les moins assis de tous.
 
 Ce sont donc des HYPOTHÈSES DE DÉPART, pas les chiffres calibrés du client.
 Tant que le chef d'entreprise n'a pas relu les colonnes `pu_res` et les
@@ -44,7 +49,23 @@ Le lien se fait exclusivement par MAPPING (ou la colonne `code_ref`).
 """
 
 # ═══════════════════════════════════════════════════════════════════════════
-# 0. PARAMÈTRES DE PRIX
+# 0. IDENTITÉ DE L'ENTREPRISE — en-tête des devis client
+# ═══════════════════════════════════════════════════════════════════════════
+
+ENTREPRISE = {
+    "nom": "BAG BATTER SRL",
+    "adresse": "Ronkel 18",
+    "cp_ville": "1780 Wemmel",
+    "pays": "Belgique",
+    "tva": "BE 0766.637.025",
+    "activite": "Entreprise générale de rénovation — façades, étanchéité, "
+                "plafonnage, isolation, peinture, menuiserie extérieure, "
+                "sanitaire léger",
+}
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 1. PARAMÈTRES DE PRIX
 # ═══════════════════════════════════════════════════════════════════════════
 #
 #   pu_vente = debourse_sec x K
@@ -69,7 +90,7 @@ PARAMS = {
 }
 
 # ═══════════════════════════════════════════════════════════════════════════
-# 1. RESSOURCES — 39 lignes
+# 2. RESSOURCES — 49 lignes
 # ═══════════════════════════════════════════════════════════════════════════
 #
 # ⚠️ MO : le taux horaire doit être le COÛT ENTREPRISE COMPLET (salaire brut
@@ -88,6 +109,7 @@ _RESSOURCES_BRUT = [
     ("MO.06", "Ouvrier qualifié sanitaire",              "MO", "h", 52.00),
     ("MO.07", "Manœuvre",                                "MO", "h", 38.00),
     ("MO.08", "Étancheur",                               "MO", "h", 52.00),
+    ("MO.09", "Ouvrier qualifié électricien",            "MO", "h", 52.00),
 
     # ── Matériaux (MAT) — prix d'achat rendu chantier, HTVA ───────────────
     ("MA.01", "Ciment gris CEM II 32,5 — sac 25 kg",     "MAT", "sac", 7.20),
@@ -117,12 +139,22 @@ _RESSOURCES_BRUT = [
     ("MA.25", "Garde-corps acier thermolaqué",           "MAT", "m", 185.00),
     ("MA.26", "Tuyau d'évacuation PVC Ø 110",            "MAT", "m", 12.80),
     ("MA.27", "Tuyau multicouche Ø 16 + raccords",       "MAT", "m", 6.50),
+    ("MA.28", "Treillis d'armature pour chape",          "MAT", "m2", 3.20),
+    ("MA.29", "Faïence murale",                          "MAT", "m2", 28.00),
+    ("MA.30", "WC suspendu + bâti-support + plaque",     "MAT", "pce", 420.00),
+    ("MA.31", "Appareillage électrique encastré",        "MAT", "pce", 8.50),
+    ("MA.32", "Câble XVB 3G2,5",                         "MAT", "m", 2.30),
+    ("MA.33", "Prise de terre : piquet, barrette, fils", "MAT", "pce", 145.00),
+    ("MA.34", "Laque pour menuiserie bois",              "MAT", "L", 14.20),
+    # Prestation sous-traitée : l'organisme agréé facture son passage.
+    ("MA.35", "Contrôle RGIE par organisme agréé",       "MAT", "pce", 195.00),
 
     # ── Matériel (EQP) — location / amortissement ─────────────────────────
     ("EQ.01", "Échafaudage de façade (location)",        "EQP", "m2.sem", 4.50),
     ("EQ.02", "Nacelle élévatrice (location)",           "EQP", "j", 190.00),
     ("EQ.03", "Conteneur 10 m3 + évacuation en centre",  "EQP", "pce", 380.00),
     ("EQ.04", "Petit matériel et consommables",          "EQP", "h", 2.20),
+    ("EQ.05", "Clôture de chantier et signalisation",    "EQP", "m.mois", 3.80),
 ]
 
 RESSOURCES = [
@@ -137,7 +169,7 @@ RESSOURCES = [
 ]
 
 # ═══════════════════════════════════════════════════════════════════════════
-# 2. OUVRAGES — 36 postes, 8 lots
+# 3. OUVRAGES — 49 postes, 9 lots
 # ═══════════════════════════════════════════════════════════════════════════
 
 LOTS = {
@@ -149,6 +181,7 @@ LOTS = {
     "60": "Plafonnage et plâtrerie",
     "70": "Peintures et revêtements",
     "80": "Menuiseries et sanitaire",
+    "90": "Électricité et conformité",
 }
 
 # (code_ouv, libelle_ouv, unite_ouv, code_ref)
@@ -159,6 +192,8 @@ _OUVRAGES_BRUT = [
     ("10.10", "Installation et repli de chantier, amenée du matériel", "FF", ""),
     ("10.20", "Échafaudage de façade, montage, location 4 sem., démontage", "m2", ""),
     ("10.30", "Protection des ouvrages conservés, bâches et films", "m2", ""),
+    ("10.40", "Signalisation, clôture et sécurisation des accès", "FF", ""),
+    ("10.50", "Dossier as-built, PV de réception, garanties", "FF", ""),
 
     # ── Lot 20 — Démolitions et évacuations ───────────────────────────────
     ("20.10", "Piquage d'enduit dégradé sur maçonnerie", "m2", ""),
@@ -166,6 +201,8 @@ _OUVRAGES_BRUT = [
     ("20.30", "Dépose de plafond existant (plâtre ou plaques)", "m2", ""),
     ("20.40", "Dépose de menuiserie extérieure, calfeutrement provisoire", "pce", ""),
     ("20.50", "Évacuation des déchets en conteneur, tri compris", "m3", ""),
+    ("20.60", "Dépose de revêtement de sol et de chape existante", "m2", ""),
+    ("20.70", "Dépose d'appareils sanitaires et de tuyauterie", "pce", ""),
 
     # ── Lot 30 — Maçonnerie et structure ──────────────────────────────────
     ("30.10", "Maçonnerie de briques en rebouchage de baie ou trémie", "m2", ""),
@@ -173,6 +210,7 @@ _OUVRAGES_BRUT = [
     ("30.30", "Réparation de béton dégradé, passivation des aciers", "m2", ""),
     ("30.40", "Cimentage hydrofuge de soubassement", "m2", ""),
     ("30.50", "Seuil en pierre bleue, pose et scellement", "m", ""),
+    ("30.60", "Rejointoiement de maçonnerie au mortier de chaux", "m2", ""),
 
     # ── Lot 40 — Façades et étanchéité ────────────────────────────────────
     ("40.10", "Nettoyage haute pression de façade", "m2", ""),
@@ -198,6 +236,9 @@ _OUVRAGES_BRUT = [
     ("70.20", "Peinture plafonds intérieurs, deux couches", "m2", ""),
     ("70.30", "Enduit de lissage sur murs avant peinture", "m2", ""),
     ("70.40", "Carrelage de sol grès cérame, colle et joints compris", "m2", ""),
+    ("70.50", "Chape de ravoirage armée 6 cm", "m2", ""),
+    ("70.60", "Faïence murale, profils de finition compris", "m2", ""),
+    ("70.70", "Peinture sur menuiseries bois, ponçage compris", "m2", ""),
 
     # ── Lot 80 — Menuiseries et sanitaire ─────────────────────────────────
     ("80.10", "Châssis PVC double vitrage, pose et finitions", "m2", ""),
@@ -206,6 +247,13 @@ _OUVRAGES_BRUT = [
     ("80.40", "Évacuation PVC Ø 110, pose et raccordement", "m", ""),
     ("80.50", "Alimentation multicouche Ø 16, pose et essais", "m", ""),
     ("80.60", "Étanchéité liquide sous carrelage de salle de bain", "m2", ""),
+    ("80.70", "WC suspendu complet, bâti-support inclus", "pce", ""),
+    ("80.80", "Essais d'étanchéité, rinçage et mise en service", "FF", ""),
+
+    # ── Lot 90 — Électricité et conformité ────────────────────────────────
+    ("90.10", "Prise de courant 2P+T encastrée", "pce", ""),
+    ("90.20", "Mise à la terre et liaisons équipotentielles RGIE", "FF", ""),
+    ("90.30", "Contrôle de conformité par organisme agréé", "FF", ""),
 ]
 
 OUVRAGES = [
@@ -220,7 +268,7 @@ OUVRAGES = [
 ]
 
 # ═══════════════════════════════════════════════════════════════════════════
-# 3. COMPOSITION — ressources consommées par unité d'ouvrage
+# 4. COMPOSITION — ressources consommées par unité d'ouvrage
 # ═══════════════════════════════════════════════════════════════════════════
 #
 # ⚠️ Sur les lignes MO, qte_res est un RENDEMENT en heures par unité
@@ -237,6 +285,10 @@ _COMPOSITION_BRUT = [
     ("10.20", "MO.07", 0.35), ("10.20", "EQ.01", 4.00),
     # 10.30 Protection
     ("10.30", "MO.07", 0.08), ("10.30", "MA.21", 0.02),
+    # 10.40 Signalisation et clôture (20 m de barrières sur la durée du chantier)
+    ("10.40", "MO.07", 4.00), ("10.40", "EQ.05", 20.00), ("10.40", "MA.21", 0.50),
+    # 10.50 Dossier as-built et réception (temps de bureau du chef de chantier)
+    ("10.50", "MO.01", 8.00), ("10.50", "MA.21", 0.30),
 
     # 20.10 Piquage d'enduit
     ("20.10", "MO.07", 0.55), ("20.10", "EQ.04", 0.55), ("20.10", "EQ.03", 0.010),
@@ -248,6 +300,10 @@ _COMPOSITION_BRUT = [
     ("20.40", "MO.05", 1.20), ("20.40", "MO.07", 1.20), ("20.40", "EQ.03", 0.050),
     # 20.50 Évacuation
     ("20.50", "MO.07", 0.60), ("20.50", "EQ.03", 0.120),
+    # 20.60 Dépose de sol et de chape (gravats lourds : conteneur bien rempli)
+    ("20.60", "MO.07", 0.65), ("20.60", "EQ.04", 0.65), ("20.60", "EQ.03", 0.020),
+    # 20.70 Dépose de sanitaires
+    ("20.70", "MO.06", 1.10), ("20.70", "MO.07", 0.50), ("20.70", "EQ.03", 0.030),
 
     # 30.10 Maçonnerie de rebouchage
     ("30.10", "MO.02", 1.60), ("30.10", "MA.01", 1.20),
@@ -263,6 +319,9 @@ _COMPOSITION_BRUT = [
     ("30.40", "MA.07", 0.10), ("30.40", "EQ.04", 0.60),
     # 30.50 Seuil en pierre bleue
     ("30.50", "MO.02", 0.90), ("30.50", "MA.19", 1.02), ("30.50", "MA.01", 0.40),
+    # 30.60 Rejointoiement au mortier de chaux (dégarnissage + rejointoiement)
+    ("30.60", "MO.02", 1.10), ("30.60", "MO.07", 0.30), ("30.60", "MA.03", 0.80),
+    ("30.60", "MA.02", 0.01), ("30.60", "EQ.04", 1.40),
 
     # 40.10 Nettoyage haute pression
     ("40.10", "MO.07", 0.15), ("40.10", "EQ.04", 0.15),
@@ -307,6 +366,14 @@ _COMPOSITION_BRUT = [
     ("70.30", "MO.04", 0.30), ("70.30", "MA.05", 0.30),
     # 70.40 Carrelage de sol
     ("70.40", "MO.02", 0.80), ("70.40", "MA.22", 1.08), ("70.40", "MA.23", 0.25),
+    # 70.50 Chape de ravoirage armée 6 cm (sable + ciment, pas de sac tout prêt)
+    ("70.50", "MO.02", 0.35), ("70.50", "MO.07", 0.30), ("70.50", "MA.01", 0.90),
+    ("70.50", "MA.02", 0.05), ("70.50", "MA.28", 1.05), ("70.50", "EQ.04", 0.65),
+    # 70.60 Faïence murale
+    ("70.60", "MO.02", 0.85), ("70.60", "MA.29", 1.08),
+    ("70.60", "MA.23", 0.30), ("70.60", "MA.16", 0.20),
+    # 70.70 Peinture sur menuiseries bois (ponçage compris : d'où 0,55 h/m2)
+    ("70.70", "MO.04", 0.55), ("70.70", "MA.34", 0.25), ("70.70", "MA.07", 0.08),
 
     # 80.10 Châssis PVC
     ("80.10", "MO.05", 1.10), ("80.10", "MA.18", 1.00), ("80.10", "MA.21", 0.30),
@@ -320,6 +387,20 @@ _COMPOSITION_BRUT = [
     ("80.50", "MO.06", 0.30), ("80.50", "MA.27", 1.08), ("80.50", "MA.21", 0.12),
     # 80.60 Étanchéité liquide
     ("80.60", "MO.02", 0.30), ("80.60", "MA.24", 1.10), ("80.60", "MA.07", 0.10),
+    # 80.70 WC suspendu (bâti-support à sceller, d'où 5 h)
+    ("80.70", "MO.06", 5.00), ("80.70", "MA.30", 1.00), ("80.70", "MA.21", 0.50),
+    # 80.80 Essais d'étanchéité et mise en service
+    ("80.80", "MO.06", 4.00), ("80.80", "MA.21", 0.20),
+
+    # 90.10 Prise encastrée (8 m de câble en moyenne jusqu'au tableau)
+    ("90.10", "MO.09", 0.75), ("90.10", "MA.31", 1.00),
+    ("90.10", "MA.32", 8.00), ("90.10", "MA.21", 0.05),
+    # 90.20 Mise à la terre RGIE
+    ("90.20", "MO.09", 6.00), ("90.20", "MA.33", 1.00),
+    ("90.20", "MA.32", 25.00), ("90.20", "MA.21", 0.40),
+    # 90.30 Contrôle RGIE : la visite est sous-traitée (MA.35), nous
+    #       n'apportons que l'accompagnement de l'organisme sur place.
+    ("90.30", "MO.01", 1.50), ("90.30", "MA.35", 1.00),
 ]
 
 COMPOSITION = [
@@ -328,7 +409,7 @@ COMPOSITION = [
 ]
 
 # ═══════════════════════════════════════════════════════════════════════════
-# 4. MAPPING — postes d'un métré imposé -> ouvrages de la bibliothèque
+# 5. MAPPING — postes d'un métré imposé -> ouvrages de la bibliothèque
 # ═══════════════════════════════════════════════════════════════════════════
 #
 # Table de correspondance pour le métré fictif CSC 2026-TP-0147 (49 postes).
@@ -373,34 +454,38 @@ MAPPING = {
     "08.02": "80.20",
     "08.03": "80.30",
     "08.06": "80.50",
-    # Non couverts (13) — voir NON_COUVERTS ci-dessous :
-    # 00.03 · 00.06 · 01.05 · 01.06 · 02.02 · 06.01 · 06.04
-    # 07.03 · 08.04 · 08.05 · 09.03 · 09.04 · 09.05
+    # Les 13 postes qui restaient sans prix — couverts depuis la création des
+    # ouvrages correspondants (voir OUVRAGES_A_VALIDER).
+    "00.03": "10.40",
+    "00.06": "10.50",
+    "01.05": "20.60",
+    "01.06": "20.70",
+    "02.02": "30.60",
+    "06.01": "70.50",
+    "06.04": "70.60",
+    "07.03": "70.70",
+    "08.04": "80.70",
+    "08.05": "80.80",
+    "09.03": "90.10",
+    "09.04": "90.20",
+    "09.05": "90.30",
 }
 
-# Les 13 postes du métré fictif que la bibliothèque ne sait pas chiffrer.
-# Il manque les rendements (h/unité) du client pour créer les ouvrages
-# correspondants. Laisser un de ces postes sans prix rend l'offre IRRÉGULIÈRE
-# (art. 76 AR 18/04/2017) : il faut soit les chiffrer à la main, soit les
-# ajouter à OUVRAGES + COMPOSITION.
-NON_COUVERTS = [
-    ("00.03", "Signalisation, clôture et sécurisation des accès", "FF"),
-    ("00.06", "Dossier as-built, PV de réception, garanties", "FF"),
-    ("01.05", "Dépose de revêtements de sol et chape existante", "m2"),
-    ("01.06", "Dépose d'appareils sanitaires et tuyauterie", "pce"),
-    ("02.02", "Rejointoiement de maçonnerie, mortier de chaux", "m2"),
-    ("06.01", "Chape de ravoirage armée 6 cm", "m2"),
-    ("06.04", "Faïence murale, profils de finition compris", "m2"),
-    ("07.03", "Peinture sur menuiseries bois, ponçage compris", "m2"),
-    ("08.04", "WC suspendu complet, bâti-support inclus", "pce"),
-    ("08.05", "Essais d'étanchéité, rinçage, mise en service", "FF"),
-    ("09.03", "Prise de courant 2P+T encastrée", "pce"),
-    ("09.04", "Mise à la terre et liaisons équipotentielles RGIE", "FF"),
-    ("09.05", "Contrôle de conformité par organisme agréé", "FF"),
+# Les 13 ouvrages créés APRÈS coup, pour couvrir les postes du métré qui
+# restaient sans prix. Le client n'a jamais fourni de rendement pour ceux-là :
+# leurs h/unité sont des estimations de marché, encore moins assises que le
+# reste de la bibliothèque (qui, elle, a au moins été confrontée aux six devis
+# vendus par la calibration). À valider en priorité.
+#
+# Sans eux, ces 13 postes partaient sans prix — et un poste sans prix rend
+# l'offre IRRÉGULIÈRE, donc rejetée (art. 76 AR 18/04/2017).
+OUVRAGES_A_VALIDER = [
+    "10.40", "10.50", "20.60", "20.70", "30.60", "70.50", "70.60",
+    "70.70", "80.70", "80.80", "90.10", "90.20", "90.30",
 ]
 
 # ═══════════════════════════════════════════════════════════════════════════
-# 5. METRES_HISTO — re-chiffrage des 6 devis forfaitaires historiques
+# 6. METRES_HISTO — re-chiffrage des 6 devis forfaitaires historiques
 # ═══════════════════════════════════════════════════════════════════════════
 #
 # ⚠️ LES QUANTITÉS SONT DES ESTIMATIONS faites à partir des descriptifs des
@@ -459,16 +544,12 @@ METRES_HISTO = {
         "objet": "Cave + porte d'entrée",
         "date": "03/06/2026",
         "forfait": 930.00,
-        # ⚠️ La partie « porte d'entrée » est en réalité une remise en peinture
-        # de menuiserie : l'ouvrage correspondant N'EXISTE PAS ENCORE dans la
-        # bibliothèque (c'est le poste 07.03 de la liste des non couverts).
-        # Elle est ici approchée par 70.30 (enduit de lissage). À reprendre dès
-        # que le client aura donné le rendement de la peinture sur bois.
         "lignes": [
             ("10.10", 0.15),
-            ("70.10", 30.0),   # murs de cave
+            ("70.10", 27.0),   # murs de cave
             ("70.20", 8.0),    # plafond de cave
-            ("70.30", 11.0),   # préparation + approximation de la porte
+            ("70.30", 6.0),    # enduit de lissage avant peinture
+            ("70.70", 4.0),    # porte d'entrée, deux faces
         ],
     },
     "15": {

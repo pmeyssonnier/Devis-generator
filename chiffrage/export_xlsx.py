@@ -6,11 +6,13 @@
 Produit `bibliotheque_prix_bagbatter.xlsx` :
 
     PARAMS       les 4 coefficients + K + taux de TVA
-    RESSOURCES   39 lignes, prix d'achat et taux horaires
-    OUVRAGES     36 lignes, 8 lots
+    RESSOURCES   49 lignes, prix d'achat et taux horaires
+    OUVRAGES     49 lignes, 9 lots
     COMPOSITION  les liens ouvrage <-> ressource (rendements MO compris)
     BORDEREAU    le calculé : déboursés, PU de vente, heures par unité
-    MAPPING      correspondance postes de métré imposé -> ouvrages
+    MAPPING      correspondance postes de métré imposé -> ouvrages,
+                 avec la colonne « statut » qui isole les 13 ouvrages dont le
+                 rendement n'a jamais été validé par le chef d'entreprise
 
 L'onglet BORDEREAU porte de VRAIES FORMULES Excel (pas des valeurs figées) :
 le chef d'entreprise peut modifier un taux horaire dans RESSOURCES ou un
@@ -41,7 +43,7 @@ from .bibliotheque import (
     COMPOSITION,
     LOTS,
     MAPPING,
-    NON_COUVERTS,
+    OUVRAGES_A_VALIDER,
     OUVRAGES,
     OUVRAGES_PAR_CODE,
     PARAMS,
@@ -200,23 +202,18 @@ def exporter_bibliotheque(chemin=NOM_FICHIER_DEFAUT, params=None):
     ws = wb.create_sheet("MAPPING")
     _entetes(ws, ["poste_metre", "code_ouv", "libelle_ouv", "unite_ouv",
                   "statut"], [14, 12, 58, 12, 30])
-    ligne = 2
-    for poste, code_ouv in sorted(MAPPING.items()):
+    a_valider = set(OUVRAGES_A_VALIDER)
+    for ligne, (poste, code_ouv) in enumerate(sorted(MAPPING.items()), start=2):
         ouv = OUVRAGES_PAR_CODE.get(code_ouv, {})
         ws.cell(row=ligne, column=1, value=poste)
         ws.cell(row=ligne, column=2, value=code_ouv)
         ws.cell(row=ligne, column=3, value=ouv.get("libelle_ouv", ""))
         ws.cell(row=ligne, column=4, value=ouv.get("unite_ouv", ""))
-        ws.cell(row=ligne, column=5, value="couvert")
-        ligne += 1
-    for poste, designation, unite in NON_COUVERTS:
-        ws.cell(row=ligne, column=1, value=poste)
-        ws.cell(row=ligne, column=2, value="")
-        ws.cell(row=ligne, column=3, value=designation)
-        ws.cell(row=ligne, column=4, value=unite)
-        ws.cell(row=ligne, column=5,
-                value="NON COUVERT — rendement manquant").font = Font(bold=True)
-        ligne += 1
+        if code_ouv in a_valider:
+            ws.cell(row=ligne, column=5,
+                    value="RENDEMENT À VALIDER").font = Font(bold=True)
+        else:
+            ws.cell(row=ligne, column=5, value="couvert")
 
     wb.save(chemin)
     return chemin, len(wb.sheetnames)

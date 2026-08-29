@@ -52,8 +52,9 @@ partir du seul document de reprise**.
 
 | | |
 |---|---|
-| **Fidèle** | structure des tables, formule de prix, K = 1,3324, 39 ressources, 36 ouvrages sur 8 lots, 13 postes non couverts, pièges openpyxl documentés |
+| **Fidèle** | structure des tables, formule de prix, K = 1,3324, les 36 ouvrages d'origine sur 8 lots, pièges openpyxl documentés |
 | **Re-saisi** | tous les prix d'achat (`pu_res`), tous les rendements MO (`qte_res`), toutes les quantités des devis historiques |
+| **Ajouté** | 13 ouvrages (lot 90 compris) pour couvrir les postes qui restaient sans prix — voir `OUVRAGES_A_VALIDER` : ce sont les rendements les moins assis de tous |
 
 Les valeurs numériques sont des **ordres de grandeur du marché belge 2026**, pas
 les chiffres calibrés du chef d'entreprise.
@@ -73,6 +74,13 @@ python -m chiffrage bordereau                    # les 36 prix unitaires
 python -m chiffrage calibration                  # comparaison aux 6 devis vendus
 python -m chiffrage fiche 40.20                  # justification d'un prix
 python -m chiffrage devis 40.20:26 70.10:120 --tva=21
+
+# Devis client prêt à envoyer (Excel, avec formules vivantes)
+python -m chiffrage devis 40.20:26 40.30:26 --sortie=devis.xlsx \
+    --nom="Rénovation façade arrière" --reference=2026-042 \
+    --client="M. Dupont, Rue de l'Église 12, 1030 Schaerbeek" \
+    --chantier="Av. Ernest Renan 62, 1030 Schaerbeek"
+
 python -m chiffrage export  bibliotheque.xlsx    # bibliothèque -> Excel, 6 onglets
 python -m chiffrage metre   metre.xlsx           # métré de marché public fictif
 python -m chiffrage offre   metre.xlsx offre.xlsx
@@ -81,11 +89,17 @@ python -m chiffrage offre   metre.xlsx offre.xlsx
 En Python (ou dans une cellule Colab) :
 
 ```python
-from chiffrage import devis, fiche_prix, calcul_bordereau
+from chiffrage import devis, fiche_prix
+from chiffrage.devis_xlsx import exporter_devis
 
-d = devis("Rénovation façade arrière", [("40.20", 26), ("40.30", 26)], tva=0.21)
+d = devis("Rénovation façade arrière", [("40.20", 26), ("40.30", 26)], tva=0.06)
 print(d["total_ht"], d["heures_mo"])
 print(fiche_prix("40.20"))
+
+exporter_devis(d, "devis_2026-042.xlsx",
+               client="M. et Mme Dupont\nRue de l'Église 12\n1030 Schaerbeek",
+               chantier="Avenue Ernest Renan 62, 1030 Schaerbeek",
+               reference="2026-042")
 ```
 
 ### Modules
@@ -95,6 +109,7 @@ print(fiche_prix("40.20"))
 | `bibliotheque.py` | les données : RESSOURCES · OUVRAGES · COMPOSITION · MAPPING · PARAMS · METRES_HISTO | — |
 | `moteur.py` | calcul du bordereau, devis, fiche de prix, calibration, contrôle de cohérence | — |
 | `export_xlsx.py` | bibliothèque → Excel 6 onglets, **avec vraies formules** | openpyxl |
+| `devis_xlsx.py` | devis client prêt à envoyer : en-tête, postes par lot, TVA, conditions, signature | openpyxl |
 | `gen_metre.py` | métré de marché public fictif (49 postes, 10 lots) pour s'entraîner | openpyxl |
 | `metre_io.py` | lecture d'un métré imposé + remplissage de l'offre | openpyxl |
 | `__main__.py` | ligne de commande | — |
@@ -114,8 +129,9 @@ une cellule Colab.
 │   ├── gen_metre.py          → métré de marché public fictif       (openpyxl)
 │   ├── metre_io.py           → lecture d'un métré imposé + offre   (openpyxl)
 │   ├── export_xlsx.py        → bibliothèque -> Excel 6 onglets     (openpyxl)
+│   ├── devis_xlsx.py         → devis client prêt à envoyer         (openpyxl)
 │   └── __main__.py           → ligne de commande
-├── tests/test_chiffrage.py   → 22 tests (8 se skippent sans openpyxl)
+├── tests/test_chiffrage.py   → 28 tests (13 se skippent sans openpyxl)
 ├── requirements.txt          → openpyxl (chaîne Excel uniquement)
 ├── requirements-dev.txt      → + pytest, ruff
 ├── ruff.toml · pytest.ini    → lint + config de tests
@@ -182,11 +198,11 @@ Les six devis forfaitaires historiques re-chiffrés avec la bibliothèque
 | 07 | Balcon avant (Av. E. Renan 35) | 2 500 € | 2 212 € | −11,5 % |
 | 10 | Plafond côté route | 1 500 € | 1 565 € | +4,3 % |
 | 11 | Jardin arrière + fenêtre 1er | 1 500 € | 1 667 € | +11,1 % |
-| 13 | Cave + porte d'entrée | 930 € | 934 € | +0,5 % |
+| 13 | Cave + porte d'entrée | 930 € | 932 € | +0,2 % |
 | 15 | Façade salle de bain | 3 650 € | 4 440 € | **+21,7 %** |
 | 16 | Plafond + linteaux + isolation | 2 400 € | 3 424 € | **+42,7 %** |
 
-Écart moyen absolu **15,3 %**. Cible : < 15 % sur **chaque** ligne.
+Écart moyen absolu **15,2 %**. Cible : < 15 % sur **chaque** ligne.
 
 Les devis 15 et 16 ressortent au-dessus du prix vendu. Deux hypothèses, non
 tranchées faute de relevés :
@@ -199,32 +215,20 @@ Le devis 16 demande 37 h de main-d'œuvre au chiffrage analytique. À 2 400 €
 HTVA matériaux compris, cela fait ~66 €/h : les frais généraux ne sont pas
 couverts.
 
+---
+
 ## Test d'intégration
 
 `python -m chiffrage metre m.xlsx && python -m chiffrage offre m.xlsx o.xlsx` :
 
-- 49 postes lus, **36 chiffrés automatiquement**, 13 non couverts
+- 49 postes lus, **49 chiffrés automatiquement**, 0 sans prix
 - **0 écart d'unité**
 - 72 formules dans le fichier d'offre, toutes ancrées sur leur propre ligne
 - les formules du pouvoir adjudicateur survivent au remplissage
 
-Les 13 postes non couverts (il manque les rendements du client) :
-
-```
-00.03  Signalisation, clôture et sécurisation des accès      FF
-00.06  Dossier as-built, PV de réception, garanties          FF
-01.05  Dépose de revêtements de sol et chape existante       m2
-01.06  Dépose d'appareils sanitaires et tuyauterie           pce
-02.02  Rejointoiement de maçonnerie, mortier de chaux        m2
-06.01  Chape de ravoirage armée 6 cm                         m2
-06.04  Faïence murale, profils de finition compris           m2
-07.03  Peinture sur menuiseries bois, ponçage compris        m2
-08.04  WC suspendu complet, bâti-support inclus              pce
-08.05  Essais d'étanchéité, rinçage, mise en service         FF
-09.03  Prise de courant 2P+T encastrée                       pce
-09.04  Mise à la terre et liaisons équipotentielles RGIE     FF
-09.05  Contrôle de conformité par organisme agréé            FF
-```
+L'offre est donc **régulière** au sens de l'art. 76 : plus aucun poste vide.
+Les 13 postes qui restaient sans prix sont couverts depuis la création des
+ouvrages `OUVRAGES_A_VALIDER` — dont les rendements restent à confirmer.
 
 ---
 
@@ -238,7 +242,9 @@ Les 13 postes non couverts (il manque les rendements du client) :
       `METRES_HISTO` ; viser un écart < 15 % sur chaque ligne
 - [ ] Trancher l'hypothèse sur les devis 15 et 16
       (sous-tarification ou surestimation des quantités)
-- [ ] Collecter les rendements des **13 ouvrages manquants** et les intégrer
+- [ ] Valider les rendements des **13 ouvrages de `OUVRAGES_A_VALIDER`** —
+      ils comblent un trou qui rendait l'offre irrégulière, mais aucun n'a
+      jamais été confronté à un chantier réel
 - [ ] Remplir `code_ref` avec les vraies références CCT (CCT 2022 Bruxelles /
       CCT-B Qualiroute / SB 250) au premier cahier des charges reçu
 - [ ] Envisager une bascule vers une base (Oracle/PL-SQL) si la bibliothèque
@@ -253,5 +259,5 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-22 tests. Les 8 tests de la chaîne Excel se skippent proprement si openpyxl
+28 tests. Les 13 tests de la chaîne Excel se skippent proprement si openpyxl
 n'est pas installé.

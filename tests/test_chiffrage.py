@@ -22,10 +22,10 @@ from chiffrage import moteur
 
 # ── 1. Structure de la bibliothèque ────────────────────────────────────────
 def test_tailles_des_tables():
-    assert len(biblio.RESSOURCES) == 39
-    assert len(biblio.OUVRAGES) == 36
-    assert len(biblio.LOTS) == 8
-    assert len(biblio.NON_COUVERTS) == 13
+    assert len(biblio.RESSOURCES) == 49
+    assert len(biblio.OUVRAGES) == 49
+    assert len(biblio.LOTS) == 9
+    assert len(biblio.OUVRAGES_A_VALIDER) == 13
 
 
 def test_bibliotheque_coherente():
@@ -55,9 +55,16 @@ def test_mapping_ne_pointe_que_des_ouvrages_existants():
 
 def test_espaces_de_nommage_disjoints():
     """Un code de poste de métré (NN.NN) ne doit jamais être un code d'ouvrage."""
-    postes = set(biblio.MAPPING) | {code for code, _, _ in biblio.NON_COUVERTS}
     ouvrages = {o["code_ouv"] for o in biblio.OUVRAGES}
-    assert postes & ouvrages == set()
+    assert set(biblio.MAPPING) & ouvrages == set()
+
+
+def test_ouvrages_a_valider_existent_et_sont_mappes():
+    """Les 13 ouvrages créés après coup doivent exister ET couvrir un poste :
+    sinon on a fabriqué des prix pour rien."""
+    codes = {o["code_ouv"] for o in biblio.OUVRAGES}
+    assert set(biblio.OUVRAGES_A_VALIDER) <= codes
+    assert set(biblio.OUVRAGES_A_VALIDER) <= set(biblio.MAPPING.values())
 
 
 # ── 2. Formule de prix ─────────────────────────────────────────────────────
@@ -180,8 +187,12 @@ def test_remplissage_de_l_offre(metre, tmp_path):
 
     rapport = remplir_metre(str(metre), str(tmp_path / "offre.xlsx"))
     assert rapport["postes"] == 49
-    assert len(rapport["chiffres"]) == 36
-    assert len(rapport["non_couverts"]) == 13
+    # Les 49 postes sont chiffrés : c'est la condition de RÉGULARITÉ de
+    # l'offre (art. 76 AR 18/04/2017). Ce test est le garde-fou du seul
+    # défaut qui fait rejeter une offre sans discussion.
+    assert len(rapport["chiffres"]) == 49
+    assert rapport["non_couverts"] == []
+    assert rapport["vides"] == []
     # Contrôle d'unité : aucun écart sur ce métré-ci, et surtout aucun poste
     # chiffré dans une unité différente de celle de l'ouvrage.
     assert rapport["ecarts_unite"] == []
@@ -271,3 +282,107 @@ def test_formules_excel_du_bordereau_donnent_les_prix_python(tmp_path, openpyxl_
         debourse = sum(q * pu for c, _, q, pu in lignes if c == code)
         # colonne M = valeur calculée par Python, écrite comme témoin
         assert bordereau.cell(r, 13).value == pytest.approx(debourse * k, abs=0.01)
+
+
+# ── 6. Devis client au format Excel ────────────────────────────────────────
+@pytest.fixture
+def devis_exemple():
+    return moteur.devis(
+        "Rénovation façade arrière",
+        [("40.20", 26.0), ("40.30", 26.0), ("70.70", 8.0)],
+        tva=0.06,
+    )
+
+
+def test_devis_client_ecrit_un_classeur(devis_exemple, tmp_path, openpyxl_dispo):
+    from openpyxl import load_workbook
+
+    from chiffrage.devis_xlsx import exporter_devis
+
+    chemin = tmp_path / "devis.xlsx"
+    _, nb = exporter_devis(devis_exemple, str(chemin), reference="2026-042",
+                           client="M. Dupont", chantier="Av. Renan 62")
+    assert nb == 3
+    ws = load_workbook(str(chemin))["DEVIS"]
+    textes = [
+        c.value for row in ws.iter_rows() for c in row if isinstance(c.value, str)
+    ]
+    assert any(biblio.ENTREPRISE["nom"] in t for t in textes)
+    assert any("2026-042" in t for t in textes)
+    assert any("TOTAL À PAYER" in t for t in textes)
+
+
+def test_devis_client_formules_ancrees_sur_leur_ligne(devis_exemple, tmp_path,
+                                                      openpyxl_dispo):
+    """Même garde-fou que pour le métré : chaque montant multiplie SA ligne."""
+    from openpyxl import load_workbook
+
+    from chiffrage.devis_xlsx import exporter_devis
+
+    chemin = tmp_path / "devis.xlsx"
+    exporter_devis(devis_exemple, str(chemin))
+    ws = load_workbook(str(chemin))["DEVIS"]
+    montants = 0
+    for row in ws.iter_rows():
+        for cell in row:
+            if isinstance(cell.value, str) and cell.value.startswith("=ROUND(D"):
+                montants += 1
+                assert cell.value == f"=ROUND(D{cell.row}*E{cell.row},2)"
+    assert montants == 3
+
+
+def test_devis_client_totaux_excel_egalent_le_moteur(devis_exemple, tmp_path,
+                                                     openpyxl_dispo):
+    """Ré-exécution en Python de la sémantique des formules du classeur.
+
+    Une erreur de plage dans un sous-total ne se verrait qu'à l'ouverture du
+    fichier par le client — c'est-à-dire après l'envoi.
+    """
+    import re
+
+    from openpyxl import load_workbook
+
+    from chiffrage.devis_xlsx import exporter_devis
+
+    chemin = tmp_path / "devis.xlsx"
+    exporter_devis(devis_exemple, str(chemin))
+    ws = load_workbook(str(chemin))["DEVIS"]
+
+    valeurs = {}
+    sous_totaux = {}
+    for row in ws.iter_rows():
+        cell = row[5]                       # colonne F
+        if not isinstance(cell.value, str):
+            continue
+        if cell.value.startswith("=ROUND(D"):
+            valeurs[cell.row] = round(ws.cell(cell.row, 4).value
+                                      * ws.cell(cell.row, 5).value, 2)
+        elif cell.value.startswith("=SUM(F"):
+            debut, fin = map(int, re.findall(r"F(\d+)", cell.value))
+            sous_totaux[cell.row] = sum(
+                valeurs[r] for r in range(debut, fin + 1) if r in valeurs
+            )
+
+    total_ht = round(sum(sous_totaux.values()), 2)
+    assert total_ht == pytest.approx(devis_exemple["total_ht"], abs=0.01)
+    assert round(total_ht * 0.06, 2) == pytest.approx(
+        devis_exemple["montant_tva"], abs=0.01
+    )
+
+
+def test_devis_client_refuse_un_devis_incomplet(tmp_path, openpyxl_dispo):
+    """Un devis qui a laissé tomber un code inconnu ne doit PAS partir chez le
+    client : le poste manquant ne se verrait qu'à la facturation."""
+    from chiffrage.devis_xlsx import exporter_devis
+
+    d = moteur.devis("test", [("40.20", 10.0), ("99.99", 5.0)])
+    with pytest.raises(ValueError, match="99.99"):
+        exporter_devis(d, str(tmp_path / "devis.xlsx"))
+    assert not (tmp_path / "devis.xlsx").exists()
+
+
+def test_devis_client_refuse_un_devis_vide(tmp_path, openpyxl_dispo):
+    from chiffrage.devis_xlsx import exporter_devis
+
+    with pytest.raises(ValueError):
+        exporter_devis(moteur.devis("vide", []), str(tmp_path / "devis.xlsx"))

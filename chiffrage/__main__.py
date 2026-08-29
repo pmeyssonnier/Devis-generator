@@ -10,8 +10,15 @@ Ligne de commande de l'outil de chiffrage.
     python -m chiffrage metre  [fichier.xlsx]       métré de marché public fictif
     python -m chiffrage offre  metre.xlsx offre.xlsx  remplit un métré imposé
 
-`devis` accepte --tva=21 (défaut 6). Les commandes export/metre/offre
-demandent openpyxl ; les autres tournent en Python nu.
+`devis` accepte --tva=21 (défaut 6) et sait produire un vrai devis client :
+
+    python -m chiffrage devis 40.20:26 40.30:26 --sortie=devis.xlsx \
+        --nom="Rénovation façade arrière" --reference=2026-042 \
+        --client="M. Dupont, Rue de l'Église 12, 1030 Schaerbeek" \
+        --chantier="Av. Ernest Renan 62, 1030 Schaerbeek"
+
+Les commandes export/metre/offre et l'option --sortie demandent openpyxl ;
+tout le reste tourne en Python nu.
 """
 
 import sys
@@ -58,22 +65,58 @@ def _cmd_bordereau():
     return 0
 
 
+_OPTIONS_DEVIS = ("nom", "sortie", "client", "chantier", "reference")
+
+
 def _cmd_devis(args):
     tva = 0.06
+    opts = {}
     lignes = []
     for arg in args:
         if arg.startswith("--tva="):
             tva = float(arg.split("=", 1)[1]) / 100.0
+            continue
+        if arg.startswith("--"):
+            cle, _, valeur = arg[2:].partition("=")
+            if cle in _OPTIONS_DEVIS:
+                opts[cle] = valeur
+            else:
+                print(f"Option inconnue, ignorée : --{cle}")
             continue
         if ":" not in arg:
             print(f"Argument ignoré (attendu code:quantité) : {arg}")
             continue
         code, qte = arg.split(":", 1)
         lignes.append((code.strip(), float(qte.replace(",", "."))))
+
     if not lignes:
         print("Rien à chiffrer. Exemple : python -m chiffrage devis 40.20:26 --tva=21")
         return 2
-    print(imprimer_devis(devis("Devis", lignes, tva=tva)))
+
+    d = devis(opts.get("nom") or "Devis", lignes, tva=tva)
+    print(imprimer_devis(d))
+
+    sortie = opts.get("sortie")
+    if not sortie:
+        return 0
+    try:
+        from .devis_xlsx import exporter_devis
+    except ImportError:
+        print("\nopenpyxl est requis pour --sortie : pip install openpyxl")
+        return 2
+    try:
+        chemin, nb = exporter_devis(
+            d,
+            sortie,
+            client=opts.get("client"),
+            chantier=opts.get("chantier"),
+            reference=opts.get("reference"),
+        )
+    except ValueError as err:
+        # Devis incomplet : mieux vaut pas de fichier qu'un fichier amputé.
+        print(f"\n⚠️  {err}")
+        return 1
+    print(f"\nDevis client écrit : {chemin} ({nb} postes)")
     return 0
 
 
