@@ -20,3 +20,13 @@ venv/
 *.swp
 *.log
 *.tmp
+
+# ── Secrets Streamlit — JAMAIS dans le dépôt ────────────────────
+# Le jeton GitHub du bouton « Commiter ces termes » vit dans les
+# secrets Streamlit Cloud (Settings > Secrets). En local, il vit dans
+# .streamlit/secrets.toml — qui ne doit jamais être commité : un
+# `git add -A` distrait suffirait à publier un jeton d'écriture.
+# Le modèle sans valeurs, lui, est suivi (.example).
+.streamlit/secrets.toml
+.streamlit/*.toml
+!.streamlit/secrets.toml.example
