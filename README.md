@@ -7,6 +7,10 @@ peinture, menuiserie extérieure, sanitaire léger.
 Bibliothèque de prix unitaires réutilisable, pour répondre à un **métré imposé**
 par un pouvoir adjudicateur sans re-chiffrer à zéro à chaque marché.
 
+**➜ [devis-generator.streamlit.app](https://devis-generator.streamlit.app/)** —
+déposer le métré, relire les correspondances, télécharger l'offre.
+Aucune installation.
+
 ---
 
 ## Le problème
@@ -68,17 +72,25 @@ et des rendements. Point d'entrée : `python -m chiffrage calibration`.
 
 ### L'interface web (le plus simple)
 
-```bash
-streamlit run streamlit_app.py       # en local
-```
+**[devis-generator.streamlit.app](https://devis-generator.streamlit.app/)**
 
 Déposer le métré Excel reçu, relire les correspondances proposées,
 télécharger l'offre. Aucune commande Python.
 
-**Déployer sur Streamlit Community Cloud** (gratuit) : sur
-[share.streamlit.io](https://share.streamlit.io), *New app* → ce dépôt →
-branche `main` → fichier principal `streamlit_app.py`. Chaque push met
-l'app à jour. Ça donne une URL utilisable depuis le téléphone.
+Déployée sur Streamlit Community Cloud depuis la branche `main`, fichier
+principal `streamlit_app.py` : **chaque push met l'app à jour**. Pour la
+faire tourner en local à la place :
+
+```bash
+pip install -r requirements.txt
+streamlit run streamlit_app.py
+```
+
+> ⚠️ L'app est publique. Tant que les prix ne sont pas calibrés, c'est
+> sans enjeu — mais le jour où ce seront les vrais taux horaires et
+> rendements de l'entreprise, l'URL exposera sa structure de coûts à qui
+> la connaît. L'accès se restreint à une liste d'adresses e-mail dans
+> *Settings → Sharing*, côté Streamlit Cloud.
 
 L'interface apporte ce que la ligne de commande ne pouvait pas :
 **l'appariement des postes à l'écran**. `MAPPING` est à refaire à chaque
