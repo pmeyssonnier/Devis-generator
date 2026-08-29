@@ -523,13 +523,30 @@ def test_appariement_sur_des_libelles_reformules(libelle, unite, attendu):
 # ── 9. Surcouche de session du lexique ─────────────────
 @pytest.fixture(autouse=True)
 def _lexique_propre():
-    """La surcouche est un état GLOBAL de module : sans ce nettoyage,
-    un test qui ajoute un synonyme fausserait tous les suivants."""
-    from chiffrage.lexique import vider_surcouche
+    """Isole CHAQUE test des deux couches mutables du lexique.
 
+    La surcouche est un état global de module : sans nettoyage, un
+    test qui ajoute un synonyme fausserait les suivants.
+
+    La couche LOCALE, elle, est chargée depuis lexique_local.json —
+    un fichier que l'APP écrit en production. Un test qui en dépend
+    se met donc à échouer le jour où quelqu'un apprend un terme
+    depuis l'interface, sans que le code ait bougé. C'est
+    exactement ce qui est arrivé avec « sablage » : la suite est
+    devenue rouge à cause d'une donnée, pas d'une régression.
+
+    Les tests qui veulent une couche locale la posent eux-mêmes.
+    """
+    from chiffrage.lexique import LOCAL, vider_surcouche
+
+    garde = {table: dict(valeurs) for table, valeurs in LOCAL.items()}
+    for valeurs in LOCAL.values():
+        valeurs.clear()
     vider_surcouche()
     yield
     vider_surcouche()
+    for table, valeurs in garde.items():
+        LOCAL[table] = valeurs
 
 
 def test_surcouche_change_l_appariement_immediatement():
