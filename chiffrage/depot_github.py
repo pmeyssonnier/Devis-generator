@@ -6,8 +6,8 @@
 Sert au bouton « commiter » du lexique : rendre permanent un terme
 appris, sans quitter l'interface ni écrire de Python.
 
-Deux fichiers écrits — `chiffrage/lexique_local.json` et
-`chiffrage/parametres_local.json` — et **du JSON, jamais du code** :
+Des fichiers de DONNÉES uniquement — le lexique, les paramètres, les
+tables de `chiffrage/data/` — et **du JSON, jamais du code** :
 le contenu vient de champs de saisie, et écrire du Python à partir
 d'une saisie serait une injection.
 
@@ -191,6 +191,46 @@ def commiter_parametres(contenu, depot, token, branche="main",
     """
     _, sha = _lire(chemin, depot, token, branche)
     return _ecrire(chemin, contenu, message, depot, token, branche, sha)
+
+
+def commiter_releves(releves, depot, token, branche="main",
+                      chemin="chiffrage/data/releves.json",
+                      message="data(releves): relevés de chantier ajoutés "
+                               "depuis l'interface",
+                      _lire=lire_fichier, _ecrire=ecrire_fichier):
+    """
+    Ajoute des relevés de chantier, en FUSIONNANT avec le journal distant.
+
+    Retourne (journal_fusionne, url_du_commit).
+
+    C'est la seule table qui ne s'écrase pas. Une table de prix est un
+    tout cohérent — deux versions ne s'additionnent pas, et le dernier
+    qui écrit gagne. Un journal de chantier est l'inverse : il
+    s'AJOUTE. Deux téléphones peuvent enregistrer le même soir, et un
+    PUT sans fusion effacerait l'observation de l'autre sans rien dire
+    — une demi-journée de chantier perdue, invisible.
+    """
+    from .moteur import fusionner_releves
+
+    texte_distant, sha = _lire(chemin, depot, token, branche)
+    distant = []
+    if texte_distant:
+        try:
+            distant = json.loads(texte_distant)
+        except ValueError as err:
+            raise ErreurDepot(
+                f"{chemin} est présent dans le dépôt mais illisible : "
+                f"{err}. Le corriger à la main avant de commiter d'ici."
+            ) from err
+    if not isinstance(distant, list):
+        raise ErreurDepot(
+            f"{chemin} n'est pas une liste de relevés. Le corriger à la "
+            f"main avant de commiter d'ici.")
+
+    fusion = fusionner_releves(distant, releves)
+    texte = json.dumps(fusion, ensure_ascii=False, indent=2) + "\n"
+    url = _ecrire(chemin, texte, message, depot, token, branche, sha)
+    return fusion, url
 
 
 def commiter_table(nom, contenu, depot, token, branche="main",

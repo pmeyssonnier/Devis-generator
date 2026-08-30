@@ -21,6 +21,7 @@ ne s'exécute pas.
                                   ⚠️ les lignes MO portent le RENDEMENT
     data/mapping.json             postes d'un métré -> ouvrages
     data/ouvrages_a_valider.json  les rendements jamais confrontés au réel
+    data/releves.json             ce qu'on a VU sur un chantier (optionnelle)
     data/metres_histo.json        les six devis vendus, pour la calibration
 
 L'identité de l'entreprise et les coefficients de vente sont ailleurs
@@ -44,6 +45,11 @@ client. Point d'entrée pour la relecture : `moteur.calibration()`.
 ──────────────────────────────────────────────────────
 MODÈLE
 ──────────────────────────────────────────────────────
+
+    RELEVES      (code_ouv, date, chantier, quantite, heures)
+                 Une observation de chantier, pas un paramètre. Le
+                 rendement constaté en est le quotient — jamais stocké,
+                 pour qu'il n'existe qu'une seule vérité.
 
     RESSOURCES   (code_res, libelle_res, type_res, unite_res, pu_res)
                  type_res : MO | MAT | EQP
@@ -103,6 +109,25 @@ def _charger(nom, dossier):
         ) from err
 
 
+def _charger_optionnel(nom, dossier, defaut):
+    """Comme _charger, mais un fichier ABSENT rend la valeur par défaut.
+
+    Réservé aux tables qui ne portent AUCUN prix. Une bibliothèque plus
+    ancienne que l'app — le cas ordinaire sur Streamlit Cloud, où un
+    push ne redémarre pas le processus — n'a pas encore le fichier :
+    lever refuserait de démarrer pour une table dont rien ne dépend.
+    Un fichier PRÉSENT mais illisible reste une faute : c'est une
+    corruption, pas une absence.
+
+    Ce raisonnement ne s'étend pas à une table de prix. Une table de
+    prix absente ne dégraderait pas le résultat, elle rendrait des
+    offres à zéro présentées comme normales.
+    """
+    if not (Path(dossier) / f"{nom}.json").exists():
+        return defaut
+    return _charger(nom, dossier)
+
+
 def charger_tables(dossier=None):
     """
     Lit et CONTRÔLE les tables d'un dossier `data/`.
@@ -119,6 +144,7 @@ def charger_tables(dossier=None):
     tables = {nom: _charger(nom, dossier) for nom in (
         "lots", "ressources", "ouvrages", "composition", "mapping",
         "ouvrages_a_valider", "metres_histo")}
+    tables["releves"] = _charger_optionnel("releves", dossier, [])
 
     # Le lot se déduit du code : le stocker deux fois, c'est risquer
     # qu'ils divergent. Les devis historiques reviennent du JSON en
@@ -204,6 +230,27 @@ def _controler(t):
         if code not in par_ouv:
             fautes.append(f"ouvrages_a_valider : « {code} » inexistant")
 
+    # Les relevés sont des OBSERVATIONS : leur forme se contrôle, mais un
+    # relevé qui pointe un ouvrage supprimé depuis n'est pas une faute —
+    # c'est une preuve périmée, et la perdre serait pire que la garder.
+    # controle_coherence() la signale ; le chargeur, lui, laisse passer.
+    if not isinstance(t["releves"], list):
+        fautes.append("releves : la table doit être une liste")
+    else:
+        for i, rel in enumerate(t["releves"]):
+            if not isinstance(rel, dict):
+                fautes.append(f"relevé n°{i + 1} : ce n'est pas un objet")
+                continue
+            for champ in ("code_ouv", "date", "chantier"):
+                if not str(rel.get(champ) or "").strip():
+                    fautes.append(f"relevé n°{i + 1} : « {champ} » manquant — "
+                                   f"un relevé sans provenance ne prouve rien")
+            for champ in ("quantite", "heures"):
+                valeur = rel.get(champ)
+                if not isinstance(valeur, (int, float)) or valeur <= 0:
+                    fautes.append(f"relevé n°{i + 1} : {champ} "
+                                   f"« {valeur} » invalide")
+
     if fautes:
         raise BibliothequeInvalide(
             f"{len(fautes)} incohérence(s) dans {DOSSIER_DATA} :\n  - "
@@ -219,6 +266,7 @@ OUVRAGES = _TABLES["ouvrages"]
 COMPOSITION = _TABLES["composition"]
 MAPPING = _TABLES["mapping"]
 OUVRAGES_A_VALIDER = _TABLES["ouvrages_a_valider"]
+RELEVES = _TABLES["releves"]
 METRES_HISTO = _TABLES["metres_histo"]
 RESSOURCES_PAR_CODE = _TABLES["ressources_par_code"]
 OUVRAGES_PAR_CODE = _TABLES["ouvrages_par_code"]

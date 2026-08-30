@@ -328,14 +328,14 @@ exporter_devis(d, "devis_2026-042.xlsx",
 | Fichier | Rôle | Dépendance |
 |---|---|---|
 | `bibliotheque.py` | les données : RESSOURCES · OUVRAGES · COMPOSITION · MAPPING · PARAMS · METRES_HISTO | — |
-| `moteur.py` | calcul du bordereau, devis, fiche de prix, relevé de chantier, calibration, contrôle de cohérence | — |
+| `moteur.py` | calcul du bordereau, devis, fiche de prix, relevés de chantier, calibration, contrôle de cohérence | — |
 | `export_xlsx.py` | bibliothèque → Excel 6 onglets, **avec vraies formules** | openpyxl |
 | `devis_xlsx.py` | devis client prêt à envoyer : en-tête, postes par lot, TVA, conditions, signature | openpyxl |
 | `devis_json.py` | enregistrer un devis (saisie, pas prix) et le relire pour le modifier | — |
 | `suggestion.py` | appariement poste imposé → ouvrage, à partir du libellé | — |
 | `lexique.py` | vocabulaire de CSC → vocabulaire de la bibliothèque, facette d'opération | — |
 | `parametres.py` | identité de l'entreprise et coefficients de vente, réglables depuis l'app | — |
-| `data/*.json` | les tables elles-mêmes : ressources, ouvrages, composition, lots, mapping | — |
+| `data/*.json` | les tables elles-mêmes : ressources, ouvrages, composition, lots, mapping, relevés | — |
 | `detection_colonnes.py` | quelle colonne est le code, la quantité, le prix | — |
 | `depot_github.py` | écrit le lexique appris dans le dépôt (API GitHub, urllib) | — |
 | `controle_prix.py` | relit une offre avant dépôt : couverture, rabais maximal, alertes | — |
@@ -595,6 +595,42 @@ dit. Faute de savoir qui a fait quoi, reprendre la proportion en place
 est le seul choix qui n'invente rien — mais c'en est un, et il doit se
 lire.
 
+**Le relevé est gardé, pas seulement calculé.** Reporter un chiffre ne
+garde rien : le lendemain, plus personne ne sait d'où venaient ces
+0,583 ni sur quel chantier. Le bouton **« 📌 Enregistrer ce relevé »**
+ajoute l'observation — ouvrage, date, chantier, quantité, heures — au
+journal `data/releves.json`. Le chantier est obligatoire : un relevé
+sans provenance ne prouve rien.
+
+Sous le champ de saisie, l'écran dit alors **ce que les chantiers
+constatent** : le nombre de relevés, l'agrégat, et son écart avec la
+bibliothèque. L'agrégat est **Σheures / Σquantités**, pas la moyenne des
+rendements — 2 m² en 3 h et 40 m² en 20 h ne pèsent pas pareil, et une
+moyenne simple donnerait au tout petit chantier le poids du grand
+(1,000 au lieu de 0,548 sur cet exemple). L'**étendue** est affichée
+aussi, du plus rapide au plus lent : un nombre seul se prendrait pour
+une mesure, et un unique relevé est annoncé comme une observation, pas
+comme une moyenne.
+
+**Le journal ne corrige aucun prix.** Il propose, on reporte, on
+applique — les trois gestes restent séparés. C'est ce qui autorise le
+repli honnête : `releves.json` est la seule table **optionnelle**, parce
+qu'elle ne porte aucun prix. Absente, le journal est vide et rien ne
+bouge. Le même raisonnement ne s'étend pas à une table de prix, qui
+absente rendrait des offres à zéro présentées comme normales.
+
+**Et c'est la seule table qui fusionne au lieu d'écraser.** Une table de
+prix est un tout cohérent : deux versions ne s'additionnent pas, le
+dernier qui écrit gagne. Un journal de chantier est l'inverse — deux
+téléphones peuvent relever le même soir, et un écrasement perdrait une
+demi-journée de chantier sans rien dire. Le commit relit le journal
+distant et réunit les deux, en dédoublonnant les observations
+identiques.
+
+Un relevé pointant un ouvrage supprimé depuis n'empêche rien : c'est une
+preuve devenue muette, signalée par `controle_coherence()` plutôt que
+jetée.
+
 **L'effet s'affiche en direct.** Corriger un taux recalcule les six
 devis historiques et montre l'écart avant/après, ligne par ligne.
 C'est l'écran de la séance de calibration : *« on relève le taux
@@ -796,7 +832,13 @@ ouvrages `OUVRAGES_A_VALIDER` — dont les rendements restent à confirmer.
 - [ ] **Relire les taux horaires** de `RESSOURCES` : coût entreprise complet
       (salaire + ONSS + congés + assurances + déplacements), pas le brut
 - [ ] **Relire les rendements** (lignes MO de `COMPOSITION`) — ils pèsent ~60 %
-      du déboursé sec et sont ici des ordres de grandeur, pas du vécu
+      du déboursé sec et sont ici des ordres de grandeur, pas du vécu.
+      L'atelier sait maintenant recevoir un relevé brut et le garder :
+      il ne manque que des chantiers réels dans `data/releves.json`
+- [ ] **Décider du statut ⚠️** : avec le journal, « jamais confronté au réel »
+      devient calculable (zéro relevé). Le rendre automatique ferait passer
+      les avertissements de 13 à 49 — plus vrai, peut-être intenable
+      commercialement. Décision du chef d'entreprise, pas décision technique
 - [ ] Obtenir les **surfaces réelles** des 6 chantiers historiques et corriger
       `METRES_HISTO` ; viser un écart < 15 % sur chaque ligne
 - [ ] Trancher l'hypothèse sur les devis 15 et 16
@@ -818,7 +860,7 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-214 tests. Ceux de la chaîne Excel se skippent sans openpyxl, ceux de
+237 tests. Ceux de la chaîne Excel se skippent sans openpyxl, ceux de
 l'interface sans streamlit. L'écriture GitHub est testée avec un
 dépôt simulé — la suite ne touche jamais au réseau.
 

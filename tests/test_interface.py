@@ -958,6 +958,123 @@ def test_un_releve_annonce_l_ecart_avec_la_bibliotheque(app):
         "le relevé s'affiche sans le rendement auquel il se compare")
 
 
+# ── Garder le relevé, pas seulement le calculer ─────────────────────────────
+
+def _garder_releve(at, quantite, personnes, heures_chacun, chantier):
+    _releve(at, quantite, personnes, heures_chacun)
+    [t for t in at.text_input if t.key == "releve_chantier"][0].set_value(
+        chantier).run()
+    [b for b in at.button if b.key == "releve_garder"][0].click().run()
+    assert not at.exception, [e.value for e in at.exception]
+    return at
+
+
+def test_sans_releve_l_ecran_dit_d_ou_vient_le_rendement(app):
+    """Le silence laisserait croire que le chiffre affiché a été
+    observé. Il vient de la documentation reconstruite."""
+    _rendements(app)
+    assert any("Aucun relevé de chantier" in c.value for c in app.caption)
+
+
+def test_un_releve_garde_rejoint_le_journal_sans_toucher_aux_prix(app):
+    """Le journal est une preuve, pas un réglage : l'enregistrer ne doit
+    corriger aucun rendement."""
+    _rendements(app)
+    seul = _un_seul_ouvrier(app)
+    [s for s in app.selectbox if s.key == "corr_rend"][0].set_value(seul).run()
+    avant = _tables(app)["composition"][seul]["qte_res"]
+    code = _tables(app)["composition"][seul]["code_ouv"]
+
+    _garder_releve(app, 12, 2, 3.5, "Av. Ernest Renan 35")
+
+    journal = _tables(app)["releves"]
+    assert len(journal) == 1
+    garde = journal[0]
+    assert garde["code_ouv"] == code
+    assert garde["chantier"] == "Av. Ernest Renan 35"
+    assert garde["quantite"] == pytest.approx(12)
+    assert garde["heures"] == pytest.approx(7), "la durée n'est pas le total"
+    assert garde["date"], "un relevé sans date ne se relit pas"
+
+    assert _tables(app)["composition"][seul]["qte_res"] == pytest.approx(avant)
+
+
+def test_un_releve_sans_chantier_ne_peut_pas_etre_garde(app):
+    """Un relevé sans provenance ne prouve rien, et ne se relit pas dans
+    six mois."""
+    _rendements(app)
+    _releve(app, quantite=12, personnes=2, heures_chacun=3.5)
+    bouton = [b for b in app.button if b.key == "releve_garder"][0]
+    assert bouton.disabled
+
+
+def test_garder_un_releve_fait_apparaitre_l_enregistrement(app):
+    """Un relevé ne change aucun prix : il n'apparaîtrait dans aucune
+    comparaison de valeurs. Sans traitement à part, le chantier serait
+    perdu au rafraîchissement — le défaut déjà rencontré sur la levée
+    de doute et sur la création d'ouvrage."""
+    _rendements(app)
+    _garder_releve(app, 12, 2, 3.5, "Av. Ernest Renan 35")
+
+    enregistrements = [b for b in app.button if "Enregistrer" in b.label
+                        and "relevé" not in b.label]
+    telechargements = [d for d in app.get("download_button")
+                        if "releves" in d.label]
+    assert enregistrements or telechargements
+    assert any("+1 relevé" in (m.delta or "")
+                for m in app.metric if m.label == "Valeurs corrigées")
+
+
+def test_le_constate_pondere_et_affiche_sa_dispersion(app):
+    """Deux chantiers très inégaux : l'agrégat doit suivre les
+    quantités, et l'étendue doit se lire — un nombre seul se prendrait
+    pour une mesure."""
+    _rendements(app)
+    seul = _un_seul_ouvrier(app)
+    [s for s in app.selectbox if s.key == "corr_rend"][0].set_value(seul).run()
+
+    _garder_releve(app, 12, 2, 3.5, "Renan 35")      # 7 h / 12
+    _garder_releve(app, 40, 1, 30.0, "Wemmel")       # 30 h / 40
+
+    dits = " ".join(m.value for m in app.markdown if "relevé(s)" in m.value)
+    assert "2 relevé(s)" in dits
+    assert f"{37 / 52:.3f}" in dits, "l'agrégat n'est pas pondéré"
+    assert any("plus rapide au plus lent" in c.value for c in app.caption)
+
+
+def test_reporter_le_constate_remplit_le_champ_sans_l_appliquer(app):
+    """Même règle que la calculette : le nombre se voit avant d'entrer
+    dans la table."""
+    _rendements(app)
+    seul = _un_seul_ouvrier(app)
+    [s for s in app.selectbox if s.key == "corr_rend"][0].set_value(seul).run()
+    avant = _tables(app)["composition"][seul]["qte_res"]
+
+    _garder_releve(app, 12, 2, 3.5, "Renan 35")
+    _garder_releve(app, 40, 1, 30.0, "Wemmel")
+    [b for b in app.button if b.key == "constate_reporter"][0].click().run()
+
+    assert _champ(app, "corr_rend_valeur").value == pytest.approx(
+        37 / 52, abs=1e-3)
+    assert _tables(app)["composition"][seul]["qte_res"] == pytest.approx(avant)
+
+
+def test_une_session_sans_journal_ne_plante_pas(AppTest):
+    """Le piège du déploiement : `st.session_state` survit à une mise à
+    jour, et les tables en session peuvent dater d'une version où cette
+    table n'existait pas. Aucun prix n'en dépend — un journal vide est
+    un repli honnête."""
+    import copy  # noqa: PLC0415
+
+    from chiffrage.moteur import tables_courantes  # noqa: PLC0415
+
+    tables = copy.deepcopy(tables_courantes())
+    del tables["releves"]
+    at = _atelier(AppTest, tables)
+    _rendements(at)
+    assert not at.exception, [e.value for e in at.exception]
+
+
 # ── Retrouver un code dans la bibliothèque ──────────────────────────────────
 
 def _table(app, colonne):
