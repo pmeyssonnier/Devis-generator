@@ -787,3 +787,62 @@ def test_valider_puis_douter_fait_bien_laller_retour(AppTest):
     # serait irrattrapable depuis l'interface.
     [b for b in at.button if b.key == "corr_rend_douter"][0].click().run()
     assert doute in at.session_state["tables_editees"]["ouvrages_a_valider"]
+
+
+# ── Retrouver un code dans la bibliothèque ──────────────────────────────────
+
+def _table(app, colonne):
+    """Le tableau qui porte cette colonne — l'app en affiche plusieurs, et
+    leur ordre change avec ce qui s'affiche ailleurs."""
+    trouves = [d.value for d in app.dataframe if colonne in d.value.columns]
+    assert trouves, f"aucun tableau avec la colonne « {colonne} »"
+    return trouves[0]
+
+
+def _chercher(app, texte):
+    [t for t in app.text_input if t.key == "biblio_recherche"][0].set_value(
+        texte).run()
+    assert not app.exception, [e.value for e in app.exception]
+    return app
+
+
+def test_la_recherche_filtre_la_bibliotheque(app):
+    """Faire défiler 49 lignes au doigt pour retrouver un code n'est pas
+    une recherche."""
+    from chiffrage.bibliotheque import OUVRAGES_PAR_CODE  # noqa: PLC0415
+
+    complet = _table(app, "À valider")
+    _chercher(app, "40.20")
+    filtre = _table(app, "À valider")
+    assert len(filtre) == 1 < len(complet)
+    assert filtre.iloc[0]["Désignation"] == (
+        OUVRAGES_PAR_CODE["40.20"]["libelle_ouv"])
+
+
+def test_la_recherche_ignore_les_accents(app):
+    """« etancheite » doit trouver « Étanchéité » : on tape au clavier
+    d'un téléphone, pas dans un éditeur."""
+    _chercher(app, "etancheite")
+    assert len(_table(app, "À valider")) >= 1
+
+
+def test_la_recherche_cumule_les_mots(app):
+    """Deux mots, deux conditions : c'est ce qui rend le filtre utile
+    au-delà du premier mot tapé."""
+    _chercher(app, "enduit")
+    large = len(_table(app, "À valider"))
+    _chercher(app, "enduit facade")
+    assert 0 < len(_table(app, "À valider")) <= large
+
+
+def test_un_mot_absent_renvoie_vers_le_lexique(app):
+    """« carrelage mural » n'existe pas dans la bibliothèque : l'ouvrage
+    s'appelle « faïence ». Un filtre littéral s'arrêterait là, alors que
+    le moteur d'appariement sait déjà faire la traduction."""
+    _chercher(app, "carrelage mural")
+    assert any("Aucun libellé" in w.value for w in app.warning)
+    proches = _table(app, "Score")
+    assert len(proches) == 5
+    faiences = [c for c in proches["Désignation"]
+                 if "aïence" in c or "arrelage" in c]
+    assert faiences, f"le lexique n'a pas mené à la faïence : {list(proches['Désignation'])}"

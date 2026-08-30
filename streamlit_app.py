@@ -55,6 +55,7 @@ from chiffrage.lexique import (
     ajouter_expression,
     ajouter_synonyme,
     est_demolition,
+    sans_accents,
     surcouche_en_python,
     vider_surcouche,
 )
@@ -76,7 +77,12 @@ from chiffrage.moteur import (
     tables_courantes,
 )
 from chiffrage.parametres import serialiser
-from chiffrage.suggestion import normaliser, proposer_mapping, suggerer
+from chiffrage.suggestion import (
+    normaliser,
+    proposer_mapping,
+    score,
+    suggerer,
+)
 
 # menu_items : « Get help » et « Report a bug » pointent par défaut vers
 # Streamlit, pas vers nous — un client final qui a un souci de chiffrage n'a
@@ -996,6 +1002,23 @@ with onglet_biblio:
     b = _bordereau(params)
     a_valider = set(OUVRAGES_A_VALIDER)
 
+    # Faire défiler 49 lignes au doigt pour retrouver un code n'est pas une
+    # recherche. Le filtre porte sur le code, le lot, la désignation et
+    # l'unité à la fois : on tape ce dont on se souvient, quoi que ce soit.
+    requete = st.text_input(
+        "Chercher un ouvrage",
+        placeholder="façade · enduit · 40.20 · toiture…",
+        key="biblio_recherche")
+    mots = sans_accents(requete).lower().split()
+
+    def _texte(code, ligne):
+        return sans_accents(
+            f"{code} {ligne['lot']} {LOTS.get(ligne['lot'], '')} "
+            f"{ligne['libelle_ouv']} {ligne['unite_ouv']}").lower()
+
+    retenus = [(code, ligne) for code, ligne in sorted(b.items())
+                if all(mot in _texte(code, ligne) for mot in mots)]
+
     lignes = [
         {
             "Code": code,
@@ -1007,10 +1030,33 @@ with onglet_biblio:
             "PU vente": ligne["pu_vente"],
             "À valider": "⚠️" if code in a_valider else "",
         }
-        for code, ligne in sorted(b.items())
+        for code, ligne in retenus
     ]
-    st.dataframe(lignes, width="stretch", hide_index=True,
-                  height=420)
+    if lignes:
+        st.dataframe(lignes, width="stretch", hide_index=True, height=420)
+        if mots:
+            st.caption(f"{len(lignes)} ouvrage(s) sur {len(b)}.")
+    else:
+        # Le filtre littéral ne connaît que les mots de la bibliothèque.
+        # « carrelage mural » n'y est pas : l'ouvrage s'appelle « faïence ».
+        # On repasse donc par le moteur d'appariement, lexique compris —
+        # le même qui apparie les métrés, pas une seconde vérité.
+        st.warning("Aucun libellé ne contient tous ces mots.", icon="⚠️")
+        proches = sorted(((score(requete, ligne["libelle_ouv"]), code)
+                           for code, ligne in b.items()), reverse=True)[:5]
+        st.caption(
+            "Les plus proches selon le lexique — « carrelage mural » mène "
+            "à « faïence ». Un score n'est pas une probabilité : il dit "
+            "« regarde ici d'abord », jamais « c'est celui-là »."
+        )
+        st.dataframe(
+            [{"Code": code, "Désignation": b[code]["libelle_ouv"],
+               "Un.": b[code]["unite_ouv"], "PU vente": b[code]["pu_vente"],
+               "Score": s}
+              for s, code in proches],
+            width="stretch", hide_index=True,
+            column_config={"Score": st.column_config.NumberColumn(
+                format="%.2f")})
 
     st.subheader("Fiche de justification de prix")
     st.caption(

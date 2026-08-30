@@ -492,6 +492,39 @@ avec les commentaires Python. Il vit maintenant dans un champ `note` :
            recouvrements et relevés compris." }
 ```
 
+### Retrouver un code
+
+L'onglet **📚 Bibliothèque** ouvre sur un champ de recherche. Le filtre
+porte d'un coup sur le **code, le lot, la désignation et l'unité** : on
+tape ce dont on se souvient. Les accents sont ignorés (`etancheite`
+trouve « Étanchéité ») et les mots se cumulent (`enduit facade` réduit
+plus que `enduit`).
+
+Quand aucun libellé ne contient les mots tapés, l'app **ne s'arrête pas
+là** : elle repasse par le moteur d'appariement, lexique compris, et
+propose les cinq ouvrages les plus proches avec leur score. C'est ce
+qui fait que `carrelage mural` mène à `70.60 · Faïence murale` (score
+0,41, loin devant le suivant à 0,22) — le vocabulaire du chantier n'est
+pas celui de la bibliothèque. C'est le **même** moteur que celui qui
+apparie les métrés, pas une seconde vérité.
+
+Ailleurs dans l'app, les listes d'ouvrages affichent code, désignation
+et prix, et se filtrent en tapant. Le rappel des lots :
+
+| Lot | Intitulé |
+|---|---|
+| 10 | Installation de chantier et préparation |
+| 20 | Démolitions, déposes et évacuations |
+| 30 | Maçonnerie et structure |
+| 40 | Façades et étanchéité |
+| 50 | Isolation |
+| 60 | Plafonnage et plâtrerie |
+| 70 | Peintures et revêtements |
+| 80 | Menuiseries et sanitaire |
+| 90 | Électricité et conformité |
+
+*Source : `chiffrage/data/lots.json`.*
+
 ### Corriger depuis l'interface
 
 L'onglet **📚 Bibliothèque** porte un atelier de correction : les taux
@@ -728,7 +761,7 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-185 tests. Ceux de la chaîne Excel se skippent sans openpyxl, ceux de
+189 tests. Ceux de la chaîne Excel se skippent sans openpyxl, ceux de
 l'interface sans streamlit. L'écriture GitHub est testée avec un
 dépôt simulé — la suite ne touche jamais au réseau.
 
