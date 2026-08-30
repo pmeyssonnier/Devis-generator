@@ -638,13 +638,35 @@ def _ui():
 
 
 def test_un_libelle_redonne_toujours_son_code():
-    """Le tableau montre « 40.20 · Enduit de façade · 98,64 €/m2 » et
-    range « 40.20 ». Le jour où un libellé contiendrait le séparateur,
-    le devis se chiffrerait sur un autre ouvrage sans rien dire."""
+    """Le tableau montre « 40.20 · Enduit de façade… » et range
+    « 40.20 ». Le jour où un libellé contiendrait le séparateur, le
+    devis se chiffrerait sur un autre ouvrage sans rien dire."""
     ui = _ui()
     b = ui._bordereau()
     for code in b:
         assert ui._code_du_libelle(ui._libelle_ouvrage(code, b)) == code
+        assert ui._code_du_libelle(ui._libelle_court(code, b)) == code
+
+
+def test_le_libelle_du_tableau_tient_sur_un_telephone():
+    """Le menu d'une grille ne s'ajuste pas à la largeur de l'écran :
+    trop long, il déborde à droite et rogne le code à GAUCHE — c'est
+    exactement ce qui s'est vu. Aucune option ne doit dépasser une
+    quarantaine de caractères."""
+    ui = _ui()
+    b = ui._bordereau()
+    trop_longs = [ui._libelle_court(c, b) for c in b
+                   if len(ui._libelle_court(c, b)) > 42]
+    assert not trop_longs, trop_longs
+
+
+def test_les_libelles_courts_restent_distincts():
+    """Tronquer deux désignations voisines pourrait les rendre
+    identiques : le code en tête garantit qu'elles ne le sont pas."""
+    ui = _ui()
+    b = ui._bordereau()
+    courts = [ui._libelle_court(c, b) for c in b]
+    assert len(set(courts)) == len(courts)
 
 
 def test_le_libelle_porte_la_designation_et_le_prix():

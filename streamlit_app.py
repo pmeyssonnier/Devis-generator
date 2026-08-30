@@ -151,6 +151,23 @@ def _code_du_libelle(libelle):
     return libelle.split(" · ", 1)[0]
 
 
+def _libelle_court(code_ouv, bordereau):
+    """« 40.20 · Enduit de façade minéral armé, deux c… »
+
+    Le libellé complet, prix compris, dépasse la largeur d'un téléphone :
+    dans le menu déroulant du tableau des postes — qui est une grille, pas
+    un simple selectbox — les options débordaient hors de l'écran, tronquées
+    à GAUCHE, code invisible. Le prix disparaît donc d'ici ; il reste sous
+    les yeux dans le tableau récapitulatif juste en dessous, colonne « PU
+    HTVA ». Le code, lui, reste en tête : c'est la clé, et
+    `_code_du_libelle()` la relit.
+    """
+    libelle = bordereau[code_ouv]["libelle_ouv"]
+    if len(libelle) > 34:
+        libelle = libelle[:33].rstrip() + "…"
+    return f"{code_ouv} · {libelle}"
+
+
 def _lignes_lisibles(lignes, bordereau):
     """Rend les postes d'un devis prêts pour le tableau, et la liste des
     ouvrages perdus en route.
@@ -180,7 +197,7 @@ def _lignes_lisibles(lignes, bordereau):
             # vient de créer.
             lisibles.append({"ouvrage": None, "qte": qte})
         elif code in bordereau:
-            lisibles.append({"ouvrage": _libelle_ouvrage(code, bordereau),
+            lisibles.append({"ouvrage": _libelle_court(code, bordereau),
                               "qte": qte})
         else:
             perdus.append(code)
@@ -921,15 +938,16 @@ with onglet_devis:
     # colonne n'accepte pas de `format_func`, contrairement aux selectbox du
     # reste de l'app. Montrer « 40.20 » demanderait de connaître par cœur une
     # cinquantaine de codes — et une erreur de choix ne se verrait qu'au
-    # chantier. Le libellé porte aussi le prix unitaire : il sert de contrôle
-    # de vraisemblance au moment même où on choisit.
+    # chantier. Le libellé est TRONQUÉ ici, à la différence des autres listes
+    # de l'app : le menu d'une grille ne s'ajuste pas à l'écran, il débordait
+    # à droite et rognait le code à gauche sur un téléphone.
     edite = st.data_editor(
         lisibles,
         num_rows="dynamic",
         width="stretch",
         column_config={
             "ouvrage": st.column_config.SelectboxColumn(
-                "Ouvrage", options=[_libelle_ouvrage(c, b) for c in sorted(b)],
+                "Ouvrage", options=[_libelle_court(c, b) for c in sorted(b)],
                 required=True, width="large"),
             "qte": st.column_config.NumberColumn(
                 "Quantité", min_value=0.0, step=0.5, format="%.2f"),
