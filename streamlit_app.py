@@ -381,18 +381,24 @@ def _repondre_a_un_metre(params):
             tuple(sorted(colonnes.items())),
             st.session_state.get("lexique_version", 0),
         )
-        if st.session_state.get("signature") != signature:
+        # L'appariement est refait quand la signature change — mais
+        # aussi quand l'un des deux états manque. Ils étaient lus en
+        # accès direct : une session dont la signature avait survécu
+        # sans son appariement (interruption au milieu du calcul,
+        # session restaurée à moitié après un rafraîchissement) levait
+        # un KeyError et affichait un bandeau rouge, là où il suffisait
+        # de recalculer.
+        etat_incomplet = ("proposition" not in st.session_state
+                           or "mapping" not in st.session_state)
+        if st.session_state.get("signature") != signature or etat_incomplet:
+            proposition = proposer_mapping(
+                postes, b, mapping_connu=MAPPING, seuil=SEUIL_SUGGESTION)
             st.session_state.signature = signature
+            st.session_state.proposition = proposition
             st.session_state.mapping = {
                 code: infos["code_ouv"]
-                for code, infos in proposer_mapping(
-                    postes, b, mapping_connu=MAPPING,
-                    seuil=SEUIL_SUGGESTION
-                ).items()
+                for code, infos in proposition.items()
             }
-            st.session_state.proposition = proposer_mapping(
-                postes, b, mapping_connu=MAPPING, seuil=SEUIL_SUGGESTION
-            )
 
         proposition = st.session_state.proposition
         mapping = st.session_state.mapping

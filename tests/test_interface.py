@@ -357,3 +357,22 @@ def test_reprendre_une_correspondance_ne_boucle_pas(app, tmp_path):
     for _ in range(3):
         app.run()
         assert not app.exception, [e.value for e in app.exception]
+
+
+def test_une_session_amputee_se_recalcule_au_lieu_de_planter(app, tmp_path):
+    """Bandeau rouge signalé au rafraîchissement : `proposition` et
+    `mapping` étaient lus en accès direct. Une session dont la
+    signature avait survécu sans son appariement levait un KeyError,
+    là où il suffisait de recalculer."""
+    from chiffrage.gen_metre import generer_metre
+
+    metre = tmp_path / "M.xlsx"
+    generer_metre(str(metre))
+    app.file_uploader[0].set_value((metre.name, metre.read_bytes(),
+                                     XLSX)).run()
+    assert {m.label: m.value for m in app.metric}["Appariés"] == "49"
+
+    del app.session_state["proposition"]
+    app.run()
+    assert not app.exception, [e.value for e in app.exception]
+    assert {m.label: m.value for m in app.metric}["Appariés"] == "49"
