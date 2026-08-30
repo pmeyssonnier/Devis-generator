@@ -225,14 +225,24 @@ def detecter(ws):
     # on propose la colonne juste après la quantité — proposition
     # explicitement signalée comme telle, car écrire un prix dans la
     # mauvaise colonne rendrait une offre silencieusement fausse.
+    # Jamais une colonne DÉJÀ ATTRIBUÉE : l'unité nommée « Unité » en G,
+    # la quantité trouvée en F, et la déduction donnait « PU = G ». Le
+    # prix s'écrivait par-dessus l'unité — six « m2 » remplacés par des
+    # montants dans le classeur rendu au pouvoir adjudicateur, et aucun
+    # avertissement puisque la détection se croyait complète. Refuser la
+    # déduction laisse le champ manquant, ce qui déclenche la demande de
+    # validation : ne pas savoir doit se voir.
     if "pu" not in champs and "quantite" in champs:
-        champs["pu"] = champs["quantite"] + 1
-        origines["pu"] = "position"
+        candidate = champs["quantite"] + 1
+        if candidate not in champs.values():
+            champs["pu"] = candidate
+            origines["pu"] = "position"
 
     # L'unité précède presque toujours la quantité.
     if "unite" not in champs and "quantite" in champs:
         candidate = champs["quantite"] - 1
-        if candidate > champs.get("code", 0):
+        if candidate > champs.get("code", 0) \
+                and candidate not in champs.values():
             champs["unite"] = candidate
             origines["unite"] = "position"
 

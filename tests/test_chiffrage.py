@@ -1743,6 +1743,28 @@ def test_aucune_colonne_assez_remplie_ne_fait_pas_planter_la_detection(
     assert "quantite" in detection["manquants"]
 
 
+def test_une_colonne_deja_attribuee_nest_pas_reprise_par_deduction(
+        openpyxl_dispo):
+    """Trouvé en vérifiant le repli partiel signalé par l'audit, et pire
+    que décrit : l'unité nommée « Unité » en G, la quantité trouvée en F,
+    et la déduction de position donnait « PU = G ». Le prix s'écrivait
+    par-dessus l'unité — et `manquants` était VIDE, donc l'interface ne
+    demandait aucune validation. Ne pas savoir où est le prix doit se
+    voir."""
+    from chiffrage.detection_colonnes import detecter
+
+    lignes = [["Poste", "Description", "", "", "", "Métrage réel", "Unité"]]
+    lignes += [[f"1.01.{i:02d}", "Enduit de façade minéral armé", "", "", "",
+                 10.0 + i, "m2"] for i in range(6)]
+    detection = detecter(_classeur(lignes).active)
+
+    assert detection["champs"]["unite"] == 7
+    assert detection["champs"]["quantite"] == 6
+    assert detection["champs"].get("pu") != detection["champs"]["unite"], (
+        "le prix irait s'écrire dans la colonne de l'unité")
+    assert "pu" in detection["manquants"], (
+        "une détection qui ignore où est le prix doit le dire")
+
 @pytest.fixture
 def metre_de_torture(tmp_path, openpyxl_dispo):
     """Les quatre pièges d'un coup — plusieurs feuilles, colonnes

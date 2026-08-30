@@ -5,7 +5,7 @@ autre assistant, autre développeur. Il donne le contexte, l'état réel, les
 décisions structurantes et — surtout — les pièges déjà payés. Le `README.md`
 documente l'outil ; celui-ci documente *le travail*.
 
-Dernière mise à jour : 30 août 2026 · 43 commits · 197 tests au vert.
+Dernière mise à jour : 30 août 2026 · 44 commits · 198 tests au vert.
 
 ---
 
@@ -294,7 +294,7 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-**197 tests.** Excel se skippe sans openpyxl, l'interface sans streamlit.
+**198 tests.** Excel se skippe sans openpyxl, l'interface sans streamlit.
 L'écriture GitHub est testée avec un dépôt simulé : la suite ne touche jamais
 au réseau. L'interface est testée par `AppTest`, qui **exécute vraiment le
 script**. Trois tests portent sur le notebook Colab, dont un qui vérifie que
