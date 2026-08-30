@@ -203,3 +203,25 @@ def test_le_prix_affiche_suit_les_parametres_de_la_barre_laterale(app,
         t.split("€")[0].strip().replace(".", "").replace(",", "."))
     assert montant(affiche) == pytest.approx(
         montant(produit[0].split("·")[1]), abs=0.01)
+
+
+def test_les_ecarts_de_calibration_sont_affiches_en_pourcents(app):
+    """`st.column_config.NumberColumn` ne multiplie PAS par 100, à la
+    différence du format « % » d'Excel. Passer la fraction brute
+    affichait « -0,1 % » pour un écart de -11,5 % : les deux devis
+    hors cible avaient l'air parfaits, et l'onglet censé juger la
+    qualité des prix disait le contraire de la vérité."""
+    from chiffrage.moteur import calibration
+
+    tableaux = [d.value for d in app.dataframe
+                 if "Écart" in list(d.value.columns)]
+    assert tableaux, "tableau de calibration introuvable"
+    affiche = tableaux[0]
+
+    attendu = {r["devis"]: r["ecart"] * 100 for r in calibration()["lignes"]}
+    for _, ligne in affiche.iterrows():
+        assert ligne["Écart"] == pytest.approx(attendu[ligne["Devis"]],
+                                                abs=0.01)
+
+    # Un écart réel de -11,5 % ne doit jamais s'afficher à -0,1.
+    assert max(abs(v) for v in affiche["Écart"]) > 1.0

@@ -1049,7 +1049,11 @@ with onglet_calib:
             "Objet": r["objet"],
             "Forfait vendu": r["forfait"],
             "Calculé": r["calcule"],
-            "Écart": r["ecart"],
+            # ×100 EXPLICITE : contrairement au format « % » d'Excel,
+            # st.column_config.NumberColumn ne multiplie pas. Passer la
+            # fraction brute affichait « -0,1 % » pour un écart de
+            # -11,5 % — trois devis hors cible avaient l'air parfaits.
+            "Écart": r["ecart"] * 100,
             "h MO": r["heures_mo"],
             "€/h vendu": r["prix_horaire_implicite"],
         }
