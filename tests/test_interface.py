@@ -870,3 +870,27 @@ def test_une_session_ouverte_pendant_un_deploiement_ne_plante_pas(AppTest):
     tables = at.session_state["tables_editees"]
     assert tables["ouvrages_a_valider"], "la table manquante n'a pas été reprise"
     assert tables["ressources"][0]["pu_res"] == 77.0, "la correction a été écrasée"
+
+
+def test_une_bibliotheque_plus_ancienne_que_lapp_ne_plante_pas(AppTest,
+                                                                monkeypatch):
+    """L'autre moitié du même piège : un déploiement Streamlit Cloud
+    relit le script SANS forcément réimporter les modules déjà chargés.
+    L'app peut donc être plus récente que le `chiffrage` qu'elle
+    utilise, et lire une table que celui-ci ne connaît pas encore.
+    Aucun calcul n'en dépend : liste vide, pas d'écran rouge."""
+    import copy  # noqa: PLC0415
+
+    from chiffrage import moteur  # noqa: PLC0415
+
+    vraies = moteur.tables_courantes
+
+    def sans_la_table(tables=None):
+        anciennes = copy.deepcopy(vraies(tables))
+        anciennes.pop("ouvrages_a_valider", None)
+        return anciennes
+
+    monkeypatch.setattr(moteur, "tables_courantes", sans_la_table)
+    at = AppTest.from_file(str(APP), default_timeout=240)
+    at.run()
+    assert not at.exception, [e.value for e in at.exception]

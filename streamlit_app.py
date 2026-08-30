@@ -131,6 +131,21 @@ def _libelle_ouvrage(code_ouv, bordereau):
             f"· {ligne['pu_vente']:.2f} €/{ligne['unite_ouv']}")
 
 
+def _a_valider(tables):
+    """La liste des rendements douteux, quelle que soit la version d'où
+    viennent ces tables.
+
+    Un déploiement Streamlit Cloud ne redémarre pas toujours le
+    processus : le script est relu, mais `st.session_state` survit et
+    les modules déjà importés restent en place. Après une mise à jour,
+    l'app peut donc lire des tables plus anciennes qu'elle — c'est ce
+    qui a mis un `KeyError` en plein écran le jour où cette table est
+    apparue. Aucun calcul n'en dépend : une liste vide est un repli
+    honnête, contrairement à un prix qu'il ne faut jamais deviner.
+    """
+    return list(tables.get("ouvrages_a_valider") or [])
+
+
 def _code_du_libelle(libelle):
     """« 40.20 · Étanchéité… · 45,00 €/m2 » -> « 40.20 »."""
     return libelle.split(" · ", 1)[0]
@@ -1149,7 +1164,7 @@ with onglet_biblio:
         # La copie de travail, pas la constante du module : le ⚠️ doit
         # disparaître à l'écran dès qu'on lève le doute, sans attendre le
         # redéploiement.
-        a_valider = set(tables["ouvrages_a_valider"])
+        a_valider = set(_a_valider(tables))
         indices_mo = [
             i for i, c in enumerate(tables["composition"])
             if origine_res[c["code_res"]]["type_res"] == "MO"]
@@ -1194,8 +1209,7 @@ with onglet_biblio:
             if st.button("✅ Rendement confirmé par un chantier réalisé",
                           key="corr_rend_valider", width="stretch"):
                 tables["ouvrages_a_valider"] = [
-                    c for c in tables["ouvrages_a_valider"]
-                    if c != code_courant]
+                    c for c in _a_valider(tables) if c != code_courant]
                 st.rerun()
             st.caption(
                 "À cocher **après** avoir relevé les heures réelles sur un "
@@ -1205,7 +1219,7 @@ with onglet_biblio:
         elif st.button("⚠️ Remettre ce rendement en doute",
                         key="corr_rend_douter", width="stretch"):
             tables["ouvrages_a_valider"] = sorted(
-                set(tables["ouvrages_a_valider"]) | {code_courant})
+                set(_a_valider(tables)) | {code_courant})
             st.rerun()
 
     # ── Créer un ouvrage ───────────────────────
@@ -1366,8 +1380,7 @@ with onglet_biblio:
     # des comparaisons ci-dessus. Sans cette ligne, lever un doute ne
     # ferait apparaître aucun bouton d'enregistrement, et le travail serait
     # perdu au rafraîchissement suivant.
-    modifs_valid = (sorted(tables["ouvrages_a_valider"])
-                     != sorted(origine["ouvrages_a_valider"]))
+    modifs_valid = sorted(_a_valider(tables)) != sorted(_a_valider(origine))
 
     avant = calibration(params)
     apres = calibration(params, tables=tables)
@@ -1375,8 +1388,8 @@ with onglet_biblio:
     m1, m2, m3 = st.columns(3)
     reperes = ([f"+{len(ouvrages_neufs)} ouvrage(s)"] if ouvrages_neufs else [])
     if modifs_valid:
-        avant_val, apres_val = (len(origine["ouvrages_a_valider"]),
-                                 len(tables["ouvrages_a_valider"]))
+        avant_val, apres_val = (len(_a_valider(origine)),
+                                 len(_a_valider(tables)))
         reperes.append(f"{avant_val} → {apres_val} à valider")
     m1.metric("Valeurs corrigées", len(modifs_res) + len(modifs_compo),
                " · ".join(reperes) or None, delta_color="off")
@@ -1411,8 +1424,7 @@ with onglet_biblio:
         if modifs_compo or ouvrages_neufs:
             a_ecrire["composition"] = tables["composition"]
         if modifs_valid:
-            a_ecrire["ouvrages_a_valider"] = sorted(
-                tables["ouvrages_a_valider"])
+            a_ecrire["ouvrages_a_valider"] = sorted(_a_valider(tables))
         if ouvrages_neufs:
             # Le lot se déduit du code : on ne le réécrit pas dans le
             # fichier, sinon les deux pourraient diverger.

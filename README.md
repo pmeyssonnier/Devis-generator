@@ -525,6 +525,27 @@ et prix, et se filtrent en tapant. Le rappel des lots :
 
 *Source : `chiffrage/data/lots.json`.*
 
+### Un déploiement ne redémarre pas toujours l'app
+
+Streamlit Cloud, sur un `git push`, relit le script **dans le processus
+en cours** : `🔄 Updated app!` dans les logs, sans `Shutting down`.
+Deux choses survivent alors à la mise à jour — l'`st.session_state` des
+sessions ouvertes, et les modules déjà importés. L'app peut donc tourner
+sur du code plus récent que les données qu'elle lit.
+
+Ça s'est vu : l'ajout de la table `ouvrages_a_valider` a mis un
+`KeyError` en plein écran, chez l'utilisateur, huit fois de suite. La
+parade est double, et les deux moitiés comptent :
+
+- les tables en cours de correction sont **complétées** depuis la
+  bibliothèque au démarrage de l'atelier — sans écraser ce qui est
+  corrigé ;
+- les lectures de cette table passent par un accès qui **ne peut pas
+  lever**. Elle ne porte aucun prix : une liste vide est un repli
+  honnête. Ce raisonnement ne vaut **pas** pour une table de prix, où
+  un repli silencieux produirait une offre fausse — c'est pourquoi le
+  chargeur, lui, refuse de démarrer plutôt que de deviner.
+
 ### Corriger depuis l'interface
 
 L'onglet **📚 Bibliothèque** porte un atelier de correction : les taux
@@ -761,7 +782,7 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-190 tests. Ceux de la chaîne Excel se skippent sans openpyxl, ceux de
+191 tests. Ceux de la chaîne Excel se skippent sans openpyxl, ceux de
 l'interface sans streamlit. L'écriture GitHub est testée avec un
 dépôt simulé — la suite ne touche jamais au réseau.
 
