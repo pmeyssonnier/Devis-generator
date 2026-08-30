@@ -37,7 +37,11 @@ def app(AppTest):
 
 
 def test_app_demarre_sans_erreur(app):
-    assert len(app.tabs) == 6
+    """Les six onglets principaux, par leur nom : un simple compte
+    inclurait les onglets imbriqués de l'atelier de correction."""
+    labels = {t.label for t in app.tabs}
+    assert {"📥 Répondre à un métré", "🧾 Devis client", "📚 Bibliothèque",
+            "🔤 Lexique", "🎯 Calibration", "⚙️ Paramètres"} <= labels
 
 
 def test_les_six_onglets_s_affichent(app):
@@ -283,3 +287,41 @@ def test_modifier_un_coefficient_propose_de_l_enregistrer(app):
     # l'onglet, qui suit la saisie.
     assert "1.3324" in ks and any(k != "1.3324" for k in ks)
     assert any("non enregistrées" in i.value for i in app.info)
+
+
+def test_l_atelier_montre_l_effet_d_une_correction(AppTest):
+    """La séance de calibration : corriger un taux et voir les écarts
+    bouger, sans que les prix des offres changent."""
+    import copy
+
+    from chiffrage.moteur import tables_courantes
+
+    at = AppTest.from_file(str(APP), default_timeout=240)
+    tables = copy.deepcopy(tables_courantes())
+    for res in tables["ressources"]:
+        if res["code_res"] == "MO.02":
+            res["pu_res"] = 55.0
+    tables["ressources_par_code"] = {r["code_res"]: r
+                                      for r in tables["ressources"]}
+    at.session_state["tables_editees"] = tables
+    at.run()
+    assert not at.exception, [e.value for e in at.exception]
+
+    mesures = {m.label: m.value for m in at.metric}
+    assert mesures["Valeurs corrigées"] == "1"
+
+    # Deux métriques portent ce nom : celle de l'atelier (sur les
+    # tables corrigées) et celle de l'onglet Calibration (sur le
+    # dépôt). Elles doivent différer — c'est tout l'intérêt.
+    ecarts = [m.value for m in at.metric if m.label == "Écart moyen absolu"]
+    assert len(ecarts) == 2 and ecarts[0] != ecarts[1]
+
+    # Le tableau comparatif avant/après doit être là.
+    comparatif = [d.value for d in at.dataframe
+                   if "Écart avant" in list(d.value.columns)]
+    assert comparatif, "tableau avant/après absent"
+    assert (comparatif[0]["Écart"] != comparatif[0]["Écart avant"]).any()
+
+    # Sans jeton GitHub, la table corrigée doit rester téléchargeable.
+    assert any("ressources.json" in d.label
+                for d in at.get("download_button"))

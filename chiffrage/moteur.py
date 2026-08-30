@@ -39,6 +39,28 @@ def euro(montant):
 # ═══════════════════════════════════════════════════════════════════════════
 
 
+def tables_courantes(tables=None):
+    """
+    Les tables sur lesquelles calculer : celles du dépôt, ou d'autres.
+
+    Le moteur lisait directement les tables du module. Il ne pouvait
+    donc rien calculer sur des valeurs en cours de correction — or
+    c'est précisément ce qu'il faut pour une séance de calibration :
+    changer un rendement et voir l'écart bouger AVANT d'enregistrer.
+    """
+    if tables is not None:
+        return tables
+    return {
+        "ressources": RESSOURCES,
+        "ouvrages": OUVRAGES,
+        "composition": COMPOSITION,
+        "lots": LOTS,
+        "metres_histo": METRES_HISTO,
+        "ressources_par_code": RESSOURCES_PAR_CODE,
+        "ouvrages_par_code": OUVRAGES_PAR_CODE,
+    }
+
+
 def coefficient_k(params=None):
     """K = (1+FG)(1+FC)(1+aléas)(1+marge). Avec les PARAMS par défaut : 1,3324."""
     p = params or PARAMS
@@ -50,7 +72,7 @@ def coefficient_k(params=None):
 # ═══════════════════════════════════════════════════════════════════════════
 
 
-def calcul_bordereau(params=None):
+def calcul_bordereau(params=None, tables=None):
     """
     Développe chaque ouvrage en déboursés et en prix de vente unitaire.
 
@@ -66,13 +88,16 @@ def calcul_bordereau(params=None):
     saisie, pas un ouvrage gratuit. controle_coherence() la signale.
     """
     k = coefficient_k(params)
+    t = tables_courantes(tables)
+    par_res = t["ressources_par_code"]
+    lots = t["lots"]
 
     bordereau = {}
-    for ouv in OUVRAGES:
+    for ouv in t["ouvrages"]:
         bordereau[ouv["code_ouv"]] = {
             "code_ouv": ouv["code_ouv"],
             "lot": ouv["lot"],
-            "libelle_lot": LOTS.get(ouv["lot"], ""),
+            "libelle_lot": lots.get(ouv["lot"], ""),
             "libelle_ouv": ouv["libelle_ouv"],
             "unite_ouv": ouv["unite_ouv"],
             "code_ref": ouv["code_ref"],
@@ -83,9 +108,9 @@ def calcul_bordereau(params=None):
             "nb_ressources": 0,
         }
 
-    for comp in COMPOSITION:
+    for comp in t["composition"]:
         ligne = bordereau.get(comp["code_ouv"])
-        res = RESSOURCES_PAR_CODE.get(comp["code_res"])
+        res = par_res.get(comp["code_res"])
         if ligne is None or res is None:
             # Référence orpheline : signalée par controle_coherence(), ignorée
             # ici pour ne pas faire exploser un chiffrage en cours.
@@ -116,7 +141,8 @@ def calcul_bordereau(params=None):
 # ═══════════════════════════════════════════════════════════════════════════
 
 
-def devis(nom, lignes, tva=None, params=None, bordereau=None):
+def devis(nom, lignes, tva=None, params=None, bordereau=None,
+           tables=None):
     """
     Chiffre une liste de lignes [(code_ouv, quantite), ...].
 
@@ -130,7 +156,8 @@ def devis(nom, lignes, tva=None, params=None, bordereau=None):
     `inconnus` liste les codes d'ouvrage absents de la bibliothèque : ils ne
     sont PAS chiffrés et ne sont pas silencieusement ignorés.
     """
-    b = bordereau if bordereau is not None else calcul_bordereau(params)
+    b = (bordereau if bordereau is not None
+          else calcul_bordereau(params, tables))
     taux = PARAMS["tva"] if tva is None else tva
 
     detail, inconnus = [], []
@@ -201,31 +228,34 @@ def imprimer_devis(d):
 # ═══════════════════════════════════════════════════════════════════════════
 
 
-def fiche_prix(code_ouv, params=None, bordereau=None):
+def fiche_prix(code_ouv, params=None, bordereau=None, tables=None):
     """
     Décomposition d'un prix unitaire, ligne de composition par ligne de
     composition. C'est la pièce à produire quand le pouvoir adjudicateur
     demande la justification d'un prix jugé anormal (art. 36 AR 18/04/2017).
     """
-    ouv = OUVRAGES_PAR_CODE.get(code_ouv)
+    t = tables_courantes(tables)
+    ouv = t["ouvrages_par_code"].get(code_ouv)
     if ouv is None:
         raise KeyError(f"Ouvrage inconnu : {code_ouv}")
-    b = bordereau if bordereau is not None else calcul_bordereau(params)
+    b = (bordereau if bordereau is not None
+          else calcul_bordereau(params, tables))
     ref = b[code_ouv]
     p = params or PARAMS
 
     out = [
         f"FICHE DE JUSTIFICATION DE PRIX — {code_ouv}",
         f"{ouv['libelle_ouv']}",
-        f"Lot {ouv['lot']} · {LOTS.get(ouv['lot'], '')} · unité : {ouv['unite_ouv']}",
+        f"Lot {ouv['lot']} · {t['lots'].get(ouv['lot'], '')} "
+        f"· unité : {ouv['unite_ouv']}",
         "",
         f"{'Ressource':<10}{'Désignation':<40}{'Type':<6}{'Un.':<8}"
         f"{'Qté':>9}{'PU':>10}{'Montant':>11}",
     ]
-    for comp in COMPOSITION:
+    for comp in t["composition"]:
         if comp["code_ouv"] != code_ouv:
             continue
-        res = RESSOURCES_PAR_CODE[comp["code_res"]]
+        res = t["ressources_par_code"][comp["code_res"]]
         lib = res["libelle_res"]
         lib = lib if len(lib) <= 38 else lib[:35] + "..."
         out.append(
@@ -258,7 +288,7 @@ def fiche_prix(code_ouv, params=None, bordereau=None):
 # ═══════════════════════════════════════════════════════════════════════════
 
 
-def calibration(params=None):
+def calibration(params=None, tables=None):
     """
     Re-chiffre les 6 devis forfaitaires historiques et compare au montant
     réellement vendu.
@@ -274,9 +304,10 @@ def calibration(params=None):
 
     Objectif fixé : |écart| < 15 % sur chaque ligne.
     """
-    b = calcul_bordereau(params)
+    t = tables_courantes(tables)
+    b = calcul_bordereau(params, tables)
     resultats = []
-    for num, info in sorted(METRES_HISTO.items()):
+    for num, info in sorted(t["metres_histo"].items()):
         d = devis(f"Devis {num} — {info['objet']}", info["lignes"], bordereau=b)
         forfait = info["forfait"]
         ecart = (d["total_ht"] - forfait) / forfait if forfait else 0.0
@@ -301,9 +332,9 @@ def calibration(params=None):
     return {"lignes": resultats, "ecart_moyen_absolu": round(moyenne, 4)}
 
 
-def imprimer_calibration(cal=None, params=None):
+def imprimer_calibration(cal=None, params=None, tables=None):
     """Tableau de calibration lisible."""
-    cal = cal or calibration(params)
+    cal = cal or calibration(params, tables)
     out = [
         f"{'Devis':<7}{'Objet':<40}{'Forfait':>11}{'Calculé':>11}"
         f"{'Écart':>9}{'h MO':>8}{'€/h vendu':>11}",

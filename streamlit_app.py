@@ -16,6 +16,7 @@ Lancement local :
     streamlit run streamlit_app.py
 """
 
+import copy
 import hashlib
 import json
 from datetime import date, datetime
@@ -39,6 +40,7 @@ from chiffrage.depot_github import (
     ErreurDepot,
     commiter_lexique,
     commiter_parametres,
+    commiter_table,
 )
 from chiffrage.justification_xlsx import exporter_justification
 from chiffrage.lexique import (
@@ -69,6 +71,7 @@ from chiffrage.moteur import (
     controle_coherence,
     devis,
     fiche_prix,
+    tables_courantes,
 )
 from chiffrage.parametres import serialiser
 from chiffrage.suggestion import normaliser, proposer_mapping, suggerer
@@ -839,6 +842,180 @@ with onglet_biblio:
     code_fiche = st.selectbox("Ouvrage", sorted(b),
                                  format_func=lambda c: _libelle_ouvrage(c, b))
     st.code(fiche_prix(code_fiche), language="text")
+
+    # ══════════════════════════════════════
+    #  Atelier de correction — la séance de calibration
+    # ══════════════════════════════════════
+    st.divider()
+    st.subheader("✏️ Corriger les prix et les rendements")
+    st.markdown(
+        "Les deux tables que le chef d'entreprise est seul à pouvoir "
+        "corriger : ce que coûte une heure, et combien d'heures prend un "
+        "mètre carré. **L'effet sur la calibration s'affiche en direct**, "
+        "avant tout enregistrement."
+    )
+
+    if "tables_editees" not in st.session_state:
+        st.session_state.tables_editees = copy.deepcopy(tables_courantes())
+    tables = st.session_state.tables_editees
+    origine = tables_courantes()
+
+    onglet_res, onglet_rend = st.tabs(
+        ["Taux horaires et prix d'achat", "Rendements (h/unité)"])
+
+    with onglet_res:
+        st.caption(
+            "Les taux MO doivent être le **coût entreprise complet** — "
+            "salaire, ONSS patronale, pécule, jours fériés, assurance loi, "
+            "déplacements, EPI. Surtout pas le brut."
+        )
+        edite_res = st.data_editor(
+            [{"Code": r["code_res"], "Désignation": r["libelle_res"],
+               "Type": r["type_res"], "Unité": r["unite_res"],
+               "Prix": r["pu_res"], "Note": r.get("note", "")}
+              for r in tables["ressources"]],
+            hide_index=True, width="stretch", height=340,
+            disabled=["Code", "Désignation", "Type", "Unité", "Note"],
+            column_config={
+                "Prix": st.column_config.NumberColumn(
+                    "Prix d'achat / taux", min_value=0.0, step=0.5,
+                    format="%.2f €", required=True),
+                "Note": st.column_config.TextColumn(width="large"),
+            },
+            key="editeur_ressources")
+        prix_saisis = {ligne["Code"]: ligne["Prix"] for ligne in edite_res}
+        for res in tables["ressources"]:
+            if res["code_res"] in prix_saisis:
+                res["pu_res"] = float(prix_saisis[res["code_res"]])
+        tables["ressources_par_code"] = {r["code_res"]: r
+                                          for r in tables["ressources"]}
+
+    with onglet_rend:
+        st.caption(
+            "Le rendement est la **seule donnée non achetable** : elle "
+            "vient de l'expérience du chantier, et pèse la majeure partie "
+            "du déboursé. C'est ici que la calibration se joue."
+        )
+        a_valider = set(OUVRAGES_A_VALIDER)
+        lignes_mo = [
+            (i, c) for i, c in enumerate(tables["composition"])
+            if tables["ressources_par_code"][c["code_res"]]["type_res"] == "MO"
+        ]
+        edite_rend = st.data_editor(
+            [{"Ouvrage": c["code_ouv"],
+               "Désignation": origine["ouvrages_par_code"][c["code_ouv"]]["libelle_ouv"],
+               "Un.": origine["ouvrages_par_code"][c["code_ouv"]]["unite_ouv"],
+               "Qui": c["code_res"],
+               "h/unité": c["qte_res"],
+               "": "⚠️" if c["code_ouv"] in a_valider else "",
+               "Note": c.get("note", "")}
+              for _, c in lignes_mo],
+            hide_index=True, width="stretch", height=340,
+            disabled=["Ouvrage", "Désignation", "Un.", "Qui", "", "Note"],
+            column_config={
+                "h/unité": st.column_config.NumberColumn(
+                    min_value=0.0, step=0.05, format="%.3f", required=True),
+                "Note": st.column_config.TextColumn(width="medium"),
+            },
+            key="editeur_rendements")
+        for (indice, _), ligne in zip(lignes_mo, edite_rend):
+            tables["composition"][indice]["qte_res"] = float(ligne["h/unité"])
+        st.caption("⚠️ = rendement jamais confronté à un chantier réel.")
+
+    # ── Effet en direct ────────────────────────
+    modifs_res = [r for r in tables["ressources"]
+                   if r["pu_res"] != origine["ressources_par_code"][
+                       r["code_res"]]["pu_res"]]
+    modifs_compo = [
+        (a, b) for a, b in zip(tables["composition"], origine["composition"])
+        if a["qte_res"] != b["qte_res"]]
+
+    avant = calibration(params)
+    apres = calibration(params, tables=tables)
+
+    m1, m2, m3 = st.columns(3)
+    m1.metric("Valeurs corrigées", len(modifs_res) + len(modifs_compo))
+    m2.metric("Écart moyen absolu",
+               f"{apres['ecart_moyen_absolu'] * 100:.1f} %",
+               f"{(apres['ecart_moyen_absolu'] - avant['ecart_moyen_absolu']) * 100:+.1f} pt"
+               if modifs_res or modifs_compo else None,
+               delta_color="inverse")
+    m3.metric("Devis hors cible",
+               sum(1 for r in apres["lignes"] if abs(r["ecart"]) > 0.15),
+               help="Cible : moins de 15 % d'écart sur CHAQUE ligne.")
+
+    if modifs_res or modifs_compo:
+        st.dataframe(
+            [{"Devis": r["devis"], "Objet": r["objet"],
+               "Forfait vendu": r["forfait"], "Calculé": r["calcule"],
+               "Écart": r["ecart"] * 100,
+               "Écart avant": a["ecart"] * 100}
+              for r, a in zip(apres["lignes"], avant["lignes"])],
+            hide_index=True, width="stretch",
+            column_config={
+                "Forfait vendu": st.column_config.NumberColumn(format="%.0f €"),
+                "Calculé": st.column_config.NumberColumn(format="%.0f €"),
+                "Écart": st.column_config.NumberColumn(format="%+.1f %%"),
+                "Écart avant": st.column_config.NumberColumn(format="%+.1f %%"),
+            })
+
+        # ── Enregistrer ────────────────────────
+        a_ecrire = {}
+        if modifs_res:
+            a_ecrire["ressources"] = tables["ressources"]
+        if modifs_compo:
+            a_ecrire["composition"] = tables["composition"]
+
+        try:
+            github = dict(st.secrets.get("github", {}))
+        except Exception:
+            github = {}
+        depot, jeton = github.get("depot"), github.get("token")
+
+        col_ok, col_raz = st.columns(2)
+        with col_ok:
+            if depot and jeton:
+                if st.button(
+                    f"📤 Enregistrer {len(a_ecrire)} table(s) dans le dépôt",
+                    type="primary", width="stretch",
+                ):
+                    with st.spinner("Écriture dans le dépôt…"):
+                        try:
+                            for nom, contenu in a_ecrire.items():
+                                commiter_table(
+                                    nom,
+                                    json.dumps(contenu, ensure_ascii=False,
+                                                indent=2) + "\n",
+                                    depot, jeton,
+                                    branche=github.get("branche", "main"))
+                        except ErreurDepot as err:
+                            st.error(str(err), icon="🛑")
+                        else:
+                            st.success(
+                                "Enregistré. L'app se redéploie dans une à "
+                                "deux minutes ; ces valeurs deviendront "
+                                "celles de la bibliothèque.", icon="✅")
+            else:
+                for nom, contenu in a_ecrire.items():
+                    st.download_button(
+                        f"⬇️ {nom}.json",
+                        json.dumps(contenu, ensure_ascii=False, indent=2) + "\n",
+                        file_name=f"{nom}.json", mime="application/json",
+                        width="stretch", key=f"dl_{nom}")
+        with col_raz:
+            if st.button("↩️ Repartir des valeurs enregistrées",
+                          width="stretch"):
+                del st.session_state.tables_editees
+                st.rerun()
+
+        st.caption(
+            "Tant que ce n'est pas enregistré, ces corrections ne valent "
+            "que pour cet aperçu : les devis et les offres continuent "
+            "d'utiliser les valeurs de la bibliothèque."
+        )
+    else:
+        st.caption("Aucune valeur corrigée pour l'instant.")
+
 
 # ══════════════════════════════════════════════════
 #  4. Lexique métier

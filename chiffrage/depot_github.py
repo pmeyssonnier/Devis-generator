@@ -191,3 +191,22 @@ def commiter_parametres(contenu, depot, token, branche="main",
     """
     _, sha = _lire(chemin, depot, token, branche)
     return _ecrire(chemin, contenu, message, depot, token, branche, sha)
+
+
+def commiter_table(nom, contenu, depot, token, branche="main",
+                    message=None, _lire=lire_fichier, _ecrire=ecrire_fichier):
+    """
+    Écrit une table de `chiffrage/data/` corrigée depuis l'interface.
+
+    Comme pour les paramètres, RIEN NE SE FUSIONNE : une table est un
+    tout cohérent, et deux versions ne s'additionnent pas — un prix
+    corrigé ne se mélange pas à un autre prix corrigé. Le dernier qui
+    écrit gagne, mais pas en aveugle : le `sha` relu juste avant fait
+    échouer l'écriture si quelqu'un est passé entre temps.
+    """
+    chemin = f"chiffrage/data/{nom}.json"
+    _, sha = _lire(chemin, depot, token, branche)
+    return _ecrire(
+        chemin, contenu,
+        message or f"data({nom}): corrigé depuis l'interface",
+        depot, token, branche, sha)

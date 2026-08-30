@@ -431,6 +431,27 @@ avec les commentaires Python. Il vit maintenant dans un champ `note` :
            recouvrements et relevés compris." }
 ```
 
+### Corriger depuis l'interface
+
+L'onglet **📚 Bibliothèque** porte un atelier de correction : les taux
+horaires et prix d'achat d'un côté, les **rendements** de l'autre —
+les deux seules tables que le chef d'entreprise puisse corriger, et
+celles dont dépend toute la calibration.
+
+**L'effet s'affiche en direct.** Corriger un taux recalcule les six
+devis historiques et montre l'écart avant/après, ligne par ligne.
+C'est l'écran de la séance de calibration : *« on relève le taux
+façadier de 48 à 55 € — le devis 15 passe de +21,7 % à +26,0 % »*.
+
+Pour que ce soit possible, le moteur accepte des tables en paramètre
+(`calcul_bordereau(tables=…)`, `calibration(tables=…)`) au lieu de lire
+celles du module. **Les corrections ne valent que pour l'aperçu** tant
+qu'elles ne sont pas enregistrées : les devis et les offres continuent
+d'utiliser la bibliothèque du dépôt. Un test le vérifie.
+
+L'enregistrement passe par le même jeton que le lexique, et n'écrit
+que les tables réellement modifiées. Sans jeton, elles se téléchargent.
+
 **Les tables sont contrôlées au chargement, pas au premier chiffrage.**
 Éditable à la main veut dire corrompable à la main, et chacune de ces
 fautes produirait un prix faux sans se voir dans un fichier de
@@ -611,7 +632,7 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-145 tests. Ceux de la chaîne Excel se skippent sans openpyxl, ceux de
+152 tests. Ceux de la chaîne Excel se skippent sans openpyxl, ceux de
 l'interface sans streamlit. L'écriture GitHub est testée avec un
 dépôt simulé — la suite ne touche jamais au réseau.
 

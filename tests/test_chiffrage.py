@@ -1510,3 +1510,74 @@ def test_le_lot_se_deduit_du_code(data_copiee):
     brut = json.loads((data_copiee / "ouvrages.json").read_text("utf-8"))
     assert all("lot" not in o for o in brut)
     assert biblio.OUVRAGES_PAR_CODE["40.20"]["lot"] == "40"
+
+
+# ── 18. Calculer sur des tables en cours de correction ────
+def _tables_modifiees(**prix):
+    """Une copie des tables du dépôt, avec des taux corrigés."""
+    import copy
+
+    tables = copy.deepcopy(moteur.tables_courantes())
+    for res in tables["ressources"]:
+        if res["code_res"] in prix:
+            res["pu_res"] = prix[res["code_res"]]
+    tables["ressources_par_code"] = {r["code_res"]: r
+                                      for r in tables["ressources"]}
+    return tables
+
+
+def test_le_moteur_calcule_sur_des_tables_fournies():
+    """Sans ça, aucun aperçu n'est possible : on ne pourrait pas voir
+    l'effet d'un rendement corrigé AVANT de l'enregistrer."""
+    tables = _tables_modifiees(**{"MO.02": 55.0})
+    assert moteur.calcul_bordereau(tables=tables)["40.20"]["pu_vente"] > \
+        moteur.calcul_bordereau()["40.20"]["pu_vente"]
+
+
+def test_les_tables_du_depot_restent_intactes():
+    """Le point critique : un aperçu ne doit RIEN changer aux prix qui
+    partent dans les offres."""
+    avant = moteur.calcul_bordereau()["40.20"]["pu_vente"]
+    moteur.calcul_bordereau(tables=_tables_modifiees(**{"MO.02": 99.0}))
+    assert moteur.calcul_bordereau()["40.20"]["pu_vente"] == avant == 98.64
+    assert biblio.RESSOURCES_PAR_CODE["MO.02"]["pu_res"] == 48.00
+
+
+def test_la_calibration_suit_les_tables_corrigees():
+    """C'est l'écran de la séance de calibration : corriger un taux,
+    voir l'écart bouger."""
+    avant = moteur.calibration()
+    apres = moteur.calibration(tables=_tables_modifiees(**{"MO.02": 55.0}))
+    assert apres["ecart_moyen_absolu"] != avant["ecart_moyen_absolu"]
+    ecarts_avant = {r["devis"]: r["ecart"] for r in avant["lignes"]}
+    # Le devis 15 est de la façade : relever le taux façadier doit le
+    # faire monter, pas descendre.
+    apres_15 = next(r for r in apres["lignes"] if r["devis"] == "15")
+    assert apres_15["ecart"] > ecarts_avant["15"]
+
+
+def test_fiche_prix_suit_aussi_les_tables_corrigees():
+    texte = moteur.fiche_prix("40.20",
+                               tables=_tables_modifiees(**{"MO.02": 55.0}))
+    assert "55.00" in texte
+
+
+def test_commit_d_une_table_n_additionne_rien():
+    """Un prix corrigé ne se mélange pas à un autre prix corrigé."""
+    from chiffrage import depot_github
+
+    vu = {}
+
+    def _lire(chemin, depot, token, branche):
+        vu["lu"] = chemin
+        return "[]", "sha-distant"
+
+    def _ecrire(chemin, contenu, message, depot, token, branche, sha):
+        vu.update(chemin=chemin, sha=sha, message=message)
+        return "https://github.com/x/y/commit/abc"
+
+    depot_github.commiter_table("ressources", "[]", "moi/depot", "jeton",
+                                 _lire=_lire, _ecrire=_ecrire)
+    assert vu["chemin"] == "chiffrage/data/ressources.json"
+    assert vu["sha"] == "sha-distant"
+    assert "ressources" in vu["message"]
