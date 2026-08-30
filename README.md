@@ -314,6 +314,20 @@ la cellule passe en ligne 21 : le fichier s'ouvre sans erreur et calcule faux.
 `gen_metre.py` écrit donc les lignes de sous-total **au fil de la boucle**,
 jamais insérées après coup — et n'appelle jamais `insert_rows`.
 
+**Rien n'est écarté en silence.** Une ligne du métré qu'on ne sait pas
+lire doit **apparaître**, pas disparaître. La règle a été apprise à la
+dure : une quantité écrite `=12.5*3` — ce qu'un pouvoir adjudicateur
+fait couramment — était ignorée, le poste sortait du décompte, et le
+rapport annonçait « tous les postes portent un prix » sur une offre
+amputée de trois lignes. Le garde-fou certifiait l'inverse de la vérité.
+
+D'où la **double ouverture du classeur** : sans `data_only`, une
+cellule de quantité rend la formule et non son résultat ; avec, on
+perdrait les formules du pouvoir adjudicateur à la sauvegarde. Les deux
+besoins s'opposent, donc on lit deux fois — les formules pour la
+structure, les valeurs pour les quantités calculées — et on n'écrit que
+sur le premier classeur.
+
 **Contrôle des unités.** Chiffrer au m² un poste imposé au mètre courant ne se
 voit qu'au moment de facturer. Quand les unités divergent, `remplir_metre()`
 **n'écrit pas de prix** et remonte le poste dans `ecarts_unite` : c'est un
@@ -495,7 +509,7 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-87 tests. Ceux de la chaîne Excel se skippent sans openpyxl, ceux de
+93 tests. Ceux de la chaîne Excel se skippent sans openpyxl, ceux de
 l'interface sans streamlit. L'écriture GitHub est testée avec un
 dépôt simulé — la suite ne touche jamais au réseau.
 

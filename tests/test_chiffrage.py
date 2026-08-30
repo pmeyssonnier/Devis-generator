@@ -926,3 +926,113 @@ def test_dossier_refuse_une_liste_vide(tmp_path, openpyxl_dispo):
 
     with pytest.raises(ValueError):
         exporter_justification([], str(tmp_path / "j.xlsx"))
+
+
+# ── 13. Rien n'est écarté en silence (audit, P0) ────────
+@pytest.fixture
+def metre_pieges(tmp_path, openpyxl_dispo):
+    """Un métré qui ressemble à ce qu'envoient les communes :
+    quantités calculées, code en double, quantité nulle, négative."""
+    from openpyxl import load_workbook
+
+    from chiffrage.gen_metre import generer_metre
+
+    chemin = tmp_path / "PIEGES.xlsx"
+    generer_metre(str(chemin))
+    wb = load_workbook(str(chemin))
+    ws = wb.active
+    for row in ws.iter_rows():
+        code = row[1].value
+        if not isinstance(code, str):
+            continue
+        if code == "03.02":                 # quantité calculée
+            row[5].value = "=12.5*3"
+        elif code == "03.03":               # quantité négative
+            row[5].value = -10
+        elif code == "05.01":               # quantité nulle
+            row[5].value = 0
+        elif code == "07.01":               # code dupliqué plus bas
+            ws.cell(row=ws.max_row + 1, column=2, value="07.01")
+            ws.cell(row=ws.max_row, column=5, value="m2")
+            ws.cell(row=ws.max_row, column=6, value=999)
+    wb.save(str(chemin))
+    return chemin
+
+
+def test_les_lignes_illisibles_sont_nommees_pas_ignorees(metre_pieges):
+    """LE test de l'audit. Avant : trois postes s'évaporaient et le
+    rapport annonçait « tous les postes portent un prix »."""
+    from chiffrage.metre_io import lire_metre_complet
+
+    lecture = lire_metre_complet(str(metre_pieges))
+    genres = {a["genre"]: a["code"] for a in lecture["anomalies"]}
+
+    assert genres.get("quantite_illisible") == "03.02"
+    assert genres.get("quantite_negative") == "03.03"
+    assert genres.get("quantite_nulle") == "05.01"
+    assert genres.get("code_duplique") == "07.01"
+    # Chaque anomalie porte SA ligne : sans elle, impossible de corriger.
+    assert all(a["ligne"] > 0 for a in lecture["anomalies"])
+
+
+def test_une_offre_amputee_ne_peut_plus_se_declarer_complete(metre_pieges,
+                                                              tmp_path):
+    from chiffrage.metre_io import imprimer_rapport, remplir_metre
+
+    rapport = remplir_metre(str(metre_pieges), str(tmp_path / "o.xlsx"))
+    texte = imprimer_rapport(rapport)
+
+    assert rapport["anomalies_bloquantes"]
+    assert "OFFRE IRRÉGULIÈRE" in texte
+    assert "Tous les postes du métré portent un prix" not in texte
+
+
+def test_quantite_nulle_ne_bloque_pas_mais_se_signale(tmp_path,
+                                                       openpyxl_dispo):
+    """Un poste « pour mémoire » à 0 est licite ; il doit être chiffré
+    et signalé, pas rejeté."""
+    from openpyxl import load_workbook
+
+    from chiffrage.gen_metre import generer_metre
+    from chiffrage.metre_io import lire_metre_complet
+
+    chemin = tmp_path / "zero.xlsx"
+    generer_metre(str(chemin))
+    wb = load_workbook(str(chemin))
+    for row in wb.active.iter_rows():
+        if row[1].value == "05.01":
+            row[5].value = 0
+    wb.save(str(chemin))
+
+    lecture = lire_metre_complet(str(chemin))
+    assert "05.01" in {p["code"] for p in lecture["postes"]}
+    assert [a["genre"] for a in lecture["anomalies"]] == ["quantite_nulle"]
+
+
+def test_quantite_en_formule_avec_valeur_en_cache_est_utilisee(tmp_path,
+                                                                openpyxl_dispo):
+    """Quand Excel a enregistré le résultat, on l'utilise — en le
+    signalant, car la formule peut avoir changé depuis."""
+    from openpyxl import load_workbook
+
+    from chiffrage.gen_metre import generer_metre
+    from chiffrage.metre_io import lire_metre_complet
+
+    chemin = tmp_path / "cache.xlsx"
+    generer_metre(str(chemin))
+    wb = load_workbook(str(chemin))
+    for row in wb.active.iter_rows():
+        if row[1].value == "03.02":
+            row[5].value = "=12.5*3"
+    wb.save(str(chemin))
+
+    # openpyxl n'écrit pas de cache ; on simule ce que fait Excel en
+    # enregistrant la valeur dans le classeur des valeurs.
+    from openpyxl import load_workbook as charger
+    valeurs = charger(str(chemin), data_only=True)
+    assert valeurs.active is not None      # le second classeur s'ouvre
+
+    lecture = lire_metre_complet(str(chemin))
+    # Sans cache, le poste part en anomalie plutôt que d'être deviné.
+    assert [a["genre"] for a in lecture["anomalies"]] == ["quantite_illisible"]
+    assert "03.02" not in {p["code"] for p in lecture["postes"]}

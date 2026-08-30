@@ -176,3 +176,30 @@ def test_controle_des_prix_apparait_apres_chiffrage(app, tmp_path):
     # Le dossier de justification doit être téléchargeable dans la foulée.
     assert any("dossier" in d.label.lower()
                 for d in app.get("download_button"))
+
+
+def test_le_prix_affiche_suit_les_parametres_de_la_barre_laterale(app,
+                                                                    tmp_path):
+    """LE bug de l'audit. Avant : 185 308 € à l'écran, 210 581 € dans
+    le fichier — le bordereau était mis en cache SANS les paramètres."""
+    from chiffrage.gen_metre import generer_metre
+
+    metre = tmp_path / "M.xlsx"
+    generer_metre(str(metre))
+
+    marge = [n for n in app.number_input if "Marge" in n.label]
+    assert marge, "curseur de marge introuvable"
+    marge[0].set_value(25.0).run()
+
+    app.file_uploader[0].set_value((metre.name, metre.read_bytes(),
+                                     XLSX)).run()
+    affiche = {m.label: m.value for m in app.metric}["Total estimé"]
+
+    [b for b in app.button if "Chiffrer" in b.label][0].click().run()
+    produit = [s.value for s in app.success if "postes chiffrés" in s.value]
+    assert produit
+
+    montant = lambda t: float(  # noqa: E731
+        t.split("€")[0].strip().replace(".", "").replace(",", "."))
+    assert montant(affiche) == pytest.approx(
+        montant(produit[0].split("·")[1]), abs=0.01)

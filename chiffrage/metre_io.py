@@ -3,8 +3,9 @@
 ║  IMPORT D'UN MÉTRÉ IMPOSÉ ET REMPLISSAGE DE L'OFFRE                      ║
 ╚══════════════════════════════════════════════════════════════════════════╝
 
-Deux fonctions :
-    lire_metre(chemin)                 -> liste des postes imposés
+Trois fonctions :
+    lire_metre(chemin)                  -> liste des postes imposés
+    lire_metre_complet(chemin)          -> postes ET anomalies
     remplir_metre(chemin, sortie, ...)  -> écrit les PU et rend un rapport
 
 ──────────────────────────────────────────────────────────────────────────
@@ -25,6 +26,17 @@ DEUX RÈGLES NON NÉGOCIABLES
    l'ouvrage, ce module N'ÉCRIT PAS de prix et remonte le poste dans
    `ecarts_unite` : c'est un arbitrage humain, pas une conversion
    automatique.
+
+3. RIEN N'EST ÉCARTÉ EN SILENCE.
+   Un poste qu'on ne sait pas lire doit APPARAÎTRE, pas disparaître. La
+   règle a été apprise à la dure : une quantité écrite `=12.5*3` — ce
+   qu'un pouvoir adjudicateur fait couramment — était ignorée, le poste
+   sortait du décompte, et le rapport annonçait fièrement « tous les
+   postes portent un prix » sur une offre amputée de trois lignes. Le
+   garde-fou certifiait l'inverse de la vérité.
+
+   Toute ligne écartée part donc dans `anomalies`, et le rapport ne peut
+   plus se déclarer complet tant qu'il en reste.
 
 Rappel : un poste laissé sans prix rend l'offre IRRÉGULIÈRE et entraîne son
 rejet (art. 76 AR 18/04/2017). `remplir_metre()` liste explicitement les
@@ -81,46 +93,119 @@ def normaliser_unite(unite):
     return _EQUIV_UNITES.get(u, u)
 
 
-def lire_metre(chemin, feuille=None):
-    """
-    Lit les postes d'un métré imposé.
+def _anomalie(genre, code, ligne, detail):
+    return {"genre": genre, "code": code, "ligne": ligne, "detail": detail}
 
-    Retourne une liste de dicts :
-        {code, designation, nature, unite, quantite, ligne}
 
-    Les lignes d'en-tête de lot, de sous-total et de récapitulatif sont
-    ignorées : seule une ligne dont la colonne B porte un code au format
-    NN.NN ET dont la colonne F porte un nombre est retenue.
+def lire_metre_complet(chemin, feuille=None):
     """
-    wb = load_workbook(chemin)          # PAS de data_only : cf. cartouche
+    Lit les postes d'un métré imposé, et rend AUSSI ce qu'il n'a pas su lire.
+
+    Retourne {"postes": [...], "anomalies": [...]}.
+
+    ── Pourquoi le classeur est ouvert DEUX FOIS ────────────────────
+    Sans `data_only`, une cellule de quantité contenant une formule rend
+    la formule, pas son résultat : `"=12.5*3"` et non `37.5`. Avec
+    `data_only=True`, on obtient la dernière valeur calculée par Excel —
+    mais on perdrait les formules du pouvoir adjudicateur à la sauvegarde.
+
+    Les deux besoins s'opposent, donc on lit deux fois : le classeur des
+    formules pour la structure, celui des valeurs pour les quantités
+    calculées. L'écriture, elle, se fait toujours sur le premier.
+
+    Un piège demeure : la valeur en cache n'existe que si Excel a ouvert
+    et enregistré le fichier au moins une fois. Un classeur produit par
+    un programme n'en a pas. Dans ce cas le poste n'est PAS deviné : il
+    part en anomalie, à saisir à la main.
+    """
+    wb = load_workbook(chemin)                    # formules — cf. cartouche
     ws = wb[feuille] if feuille else wb.active
 
-    postes, vus = [], set()
+    # Second classeur : les valeurs mises en cache par Excel. Il ne sert
+    # QU'À LIRE, et n'est jamais sauvegardé.
+    try:
+        wb_valeurs = load_workbook(chemin, data_only=True)
+        ws_valeurs = wb_valeurs[feuille] if feuille else wb_valeurs.active
+    except Exception:
+        ws_valeurs = None
+
+    postes, anomalies, vus = [], [], {}
     for row in ws.iter_rows(min_row=1, max_row=ws.max_row):
         code = row[COL_CODE - 1].value
         if not isinstance(code, str) or not RE_CODE_POSTE.match(code.strip()):
             continue
         code = code.strip()
+        numero = row[0].row
+        designation = (row[COL_DESIGNATION - 1].value or "")
         qte = row[COL_QUANTITE - 1].value
+
+        # ── Quantité calculée par formule ────────────────────
+        if isinstance(qte, str) and qte.lstrip().startswith("="):
+            cache = (ws_valeurs.cell(numero, COL_QUANTITE).value
+                      if ws_valeurs is not None else None)
+            if isinstance(cache, (int, float)):
+                anomalies.append(_anomalie(
+                    "quantite_formule", code, numero,
+                    f"Quantité calculée par la formule « {qte} ». Valeur "
+                    f"en cache utilisée : {cache:g}. À vérifier."))
+                qte = cache
+            else:
+                anomalies.append(_anomalie(
+                    "quantite_illisible", code, numero,
+                    f"Quantité calculée par la formule « {qte} », sans "
+                    f"valeur en cache — le classeur n'a jamais été ouvert "
+                    f"dans Excel. Poste NON chiffré : ouvrir puis "
+                    f"enregistrer le fichier, ou saisir la quantité."))
+                continue
+
         if not isinstance(qte, (int, float)):
+            anomalies.append(_anomalie(
+                "quantite_absente", code, numero,
+                f"Aucune quantité lisible (cellule : {qte!r}). "
+                f"Poste NON chiffré."))
             continue
+
+        if qte < 0:
+            anomalies.append(_anomalie(
+                "quantite_negative", code, numero,
+                f"Quantité négative ({qte:g}). Poste NON chiffré."))
+            continue
+
+        if qte == 0:
+            anomalies.append(_anomalie(
+                "quantite_nulle", code, numero,
+                "Quantité nulle — poste « pour mémoire » ou oubli du "
+                "pouvoir adjudicateur. Chiffré à 0 €, à confirmer."))
+
         if code in vus:
-            # Un même code deux fois dans un métré : anomalie du document
-            # source, on garde la première occurrence et on ne l'écrase pas.
+            # Deux lignes pour un même code : on ne choisit PAS à la
+            # place de l'utilisateur, mais on ne l'ignore plus en
+            # silence — le total dépend de la ligne retenue.
+            anomalies.append(_anomalie(
+                "code_duplique", code, numero,
+                f"Ce code apparaît déjà ligne {vus[code]}. Seule la "
+                f"première occurrence est chiffrée ; la quantité de "
+                f"celle-ci ({qte:g}) est ignorée."))
             continue
-        vus.add(code)
-        postes.append(
-            {
-                "code": code,
-                "designation": (row[COL_DESIGNATION - 1].value or "").strip(),
-                "nature": (row[COL_NATURE - 1].value or "").strip(),
-                "unite": (row[COL_UNITE - 1].value or "").strip(),
-                "quantite": float(qte),
-                "ligne": row[0].row,
-            }
-        )
+        vus[code] = numero
+
+        postes.append({
+            "code": code,
+            "designation": designation.strip(),
+            "nature": (row[COL_NATURE - 1].value or "").strip(),
+            "unite": (row[COL_UNITE - 1].value or "").strip(),
+            "quantite": float(qte),
+            "ligne": numero,
+        })
+
     wb.close()
-    return postes
+    return {"postes": postes, "anomalies": anomalies}
+
+
+def lire_metre(chemin, feuille=None):
+    """Les seuls postes lisibles. Voir lire_metre_complet() pour ce qui
+    a été écarté — et il vaut mieux le regarder."""
+    return lire_metre_complet(chemin, feuille)["postes"]
 
 
 def remplir_metre(
@@ -142,6 +227,9 @@ def remplir_metre(
           fichier : le taux du classeur est celui imposé par le PA.
 
     Retourne un rapport :
+        anomalies[]     lignes qu'on n'a PAS su lire — quantité en
+                        formule, absente, négative, code en double.
+                        Chacune est un poste absent de l'offre.
         postes          nombre de postes lus
         chiffres[]      postes prix écrit  {code, ouvrage, pu, quantite, montant, heures}
         non_couverts[]  postes sans correspondance dans le mapping
@@ -158,7 +246,8 @@ def remplir_metre(
     wb = load_workbook(chemin_sortie)   # PAS de data_only : cf. cartouche
     ws = wb[feuille] if feuille else wb.active
 
-    postes = lire_metre(chemin_sortie, feuille)
+    lecture = lire_metre_complet(chemin_sortie, feuille)
+    postes, anomalies = lecture["postes"], lecture["anomalies"]
 
     chiffres, non_couverts, ecarts_unite = [], [], []
     total_ht = heures = 0.0
@@ -215,8 +304,15 @@ def remplir_metre(
     wb.close()
 
     total_ht = round(total_ht, 2)
+    # Une ligne écartée à la lecture est un poste ABSENT de l'offre —
+    # aussi grave qu'un poste sans prix, et bien plus discret.
+    bloquantes = [a for a in anomalies
+                   if a["genre"] not in ("quantite_formule", "quantite_nulle")]
+
     return {
         "fichier": chemin_sortie,
+        "anomalies": anomalies,
+        "anomalies_bloquantes": bloquantes,
         "postes": len(postes),
         "chiffres": chiffres,
         "non_couverts": non_couverts,
@@ -259,14 +355,23 @@ def imprimer_rapport(rapport):
         for p in r["non_couverts"]:
             out.append(f"   {p['code']}  {p['designation']} "
                        f"[{p['unite']} × {p['quantite']:g}]")
-    if r["vides"]:
+    if r.get("anomalies"):
+        out += ["", f"⚠️  {len(r['anomalies'])} LIGNE(S) NON LUE(S) OU "
+                     "DOUTEUSE(S) DANS LE MÉTRÉ :"]
+        for a in r["anomalies"]:
+            out.append(f"   ligne {a['ligne']} · {a['code']} — {a['detail']}")
+
+    if r["vides"] or r.get("anomalies_bloquantes"):
+        manquants = list(r["vides"]) + [a["code"] for a
+                                          in r.get("anomalies_bloquantes", [])]
         out += [
             "",
             "🛑 OFFRE IRRÉGULIÈRE EN L'ÉTAT — art. 76 AR 18/04/2017.",
-            f"   {len(r['vides'])} postes sont sans prix : "
-            + ", ".join(r["vides"]),
-            "   Les chiffrer à la main ou créer les ouvrages manquants avant envoi.",
+            f"   {len(manquants)} postes ne partiraient pas chiffrés : "
+            + ", ".join(dict.fromkeys(manquants)),
+            "   Les chiffrer à la main, créer les ouvrages manquants, ou "
+            "corriger le métré avant envoi.",
         ]
     else:
-        out += ["", "✅ Tous les postes portent un prix."]
+        out += ["", "✅ Tous les postes du métré portent un prix."]
     return "\n".join(out)

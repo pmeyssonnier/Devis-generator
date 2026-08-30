@@ -50,7 +50,7 @@ from chiffrage.lexique import (
 )
 from chiffrage.gen_metre import generer_metre
 from chiffrage.metre_io import (
-    lire_metre,
+    lire_metre_complet,
     normaliser_unite,
     remplir_metre,
 )
@@ -77,10 +77,24 @@ SEUIL_CONFIANCE = 0.60
 SANS_OUVRAGE = "— ne pas chiffrer —"
 
 
-@st.cache_data
-def _bordereau():
-    """Le bordereau ne dépend que du code : calculé une fois par session."""
-    return calcul_bordereau()
+def _bordereau(params=None):
+    """Le bordereau AUX PARAMÈTRES COURANTS.
+
+    Surtout pas de `@st.cache_data` sans clé ici. Le bordereau
+    dépendait « du code seul » tant que les coefficients étaient
+    figés ; depuis que la barre latérale les règle, un cache sans
+    paramètre sert un prix calculé avec d'AUTRES coefficients que
+    ceux affichés.
+
+    Le symptôme mesuré, marge portée à 25 % : 185 308 € affichés à
+    l'écran, 210 581 € dans le fichier réellement produit. Deux
+    vérités sur le même écran, 13 % d'écart, sur un document qui
+    part chez un pouvoir adjudicateur.
+
+    Le calcul prend 0,11 ms pour 49 ouvrages. Le cache économisait
+    ça, au prix d'un faux prix affiché.
+    """
+    return calcul_bordereau(params)
 
 
 def _libelle_ouvrage(code_ouv, bordereau):
@@ -200,17 +214,37 @@ def _repondre_a_un_metre(params):
                 )
         return
 
-    b = _bordereau()
+    b = _bordereau(params)
 
     with TemporaryDirectory() as tmp:
         chemin_metre = Path(tmp) / fichier.name
         chemin_metre.write_bytes(fichier.getvalue())
 
         try:
-            postes = lire_metre(str(chemin_metre))
+            lecture = lire_metre_complet(str(chemin_metre))
         except Exception as err:
             st.error(f"Lecture impossible : {err}", icon="🛑")
             return
+        postes = lecture["postes"]
+
+        # Une ligne non lue est un poste ABSENT de l'offre — plus
+        # discret qu'un poste sans prix, et tout aussi disqualifiant.
+        if lecture["anomalies"]:
+            bloquantes = [a for a in lecture["anomalies"]
+                           if a["genre"] not in ("quantite_formule",
+                                                  "quantite_nulle")]
+            texte = "\n".join(
+                f"- ligne **{a['ligne']}** · `{a['code']}` — {a['detail']}"
+                for a in lecture["anomalies"])
+            if bloquantes:
+                st.error(
+                    f"**{len(bloquantes)} ligne(s) du métré n'ont pas pu "
+                    f"être lues — ces postes ne seront PAS chiffrés.**\n\n"
+                    + texte, icon="🛑")
+            else:
+                st.warning(
+                    f"**{len(lecture['anomalies'])} ligne(s) à "
+                    f"vérifier.**\n\n" + texte, icon="⚠️")
 
         if not postes:
             st.error(
@@ -564,7 +598,7 @@ with onglet_devis:
     st.header("Devis client")
     _avertissement_calibration()
 
-    b = _bordereau()
+    b = _bordereau(params)
     col_g, col_d = st.columns([2, 1])
 
     with col_g:
@@ -660,7 +694,7 @@ with onglet_biblio:
     st.header("Bibliothèque de prix")
     _avertissement_calibration()
 
-    b = _bordereau()
+    b = _bordereau(params)
     a_valider = set(OUVRAGES_A_VALIDER)
 
     lignes = [
@@ -702,7 +736,7 @@ with onglet_lexique:
         "apparié et un poste laissé sans prix."
     )
 
-    b = _bordereau()
+    b = _bordereau(params)
 
     # ── Banc d'essai ──────────────────────────
     st.subheader("Banc d'essai")
