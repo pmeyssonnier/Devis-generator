@@ -245,6 +245,7 @@ exporter_devis(d, "devis_2026-042.xlsx",
 | `devis_xlsx.py` | devis client prêt à envoyer : en-tête, postes par lot, TVA, conditions, signature | openpyxl |
 | `suggestion.py` | appariement poste imposé → ouvrage, à partir du libellé | — |
 | `lexique.py` | vocabulaire de CSC → vocabulaire de la bibliothèque, facette d'opération | — |
+| `detection_colonnes.py` | quelle colonne est le code, la quantité, le prix | — |
 | `depot_github.py` | écrit le lexique appris dans le dépôt (API GitHub, urllib) | — |
 | `controle_prix.py` | relit une offre avant dépôt : couverture, rabais maximal, alertes | — |
 | `justification_xlsx.py` | dossier de justification de prix (art. 36) | openpyxl |
@@ -313,6 +314,23 @@ renvoyé ne recalcule plus rien.
 la cellule passe en ligne 21 : le fichier s'ouvre sans erreur et calcule faux.
 `gen_metre.py` écrit donc les lignes de sous-total **au fil de la boucle**,
 jamais insérées après coup — et n'appelle jamais `insert_rows`.
+
+**Les colonnes sont détectées, pas supposées.** `B = code`,
+`F = quantité`, `G = prix` était la disposition du métré
+d'entraînement — chez une autre commune, l'outil ne lisait rien, ou
+pire, écrivait le prix dans la mauvaise colonne. `detection_colonnes.py`
+lit les intitulés (« Qté », « Métré », « P.U. HTVA » désignent la même
+chose) et, à défaut, le contenu.
+
+Une exception éclaire le reste : **pour la colonne des codes, le
+contenu l'emporte sur l'intitulé.** Un métré titre couramment « N° »
+son simple compteur de lignes, juste avant la vraie colonne des codes ;
+se fier au titre partait sur le compteur et ne lisait plus aucun poste.
+C'est le seul champ qu'on sache vérifier — une cellule ressemble à un
+code, ou non.
+
+La détection **propose**, l'interface affiche la correspondance et
+permet de la corriger avant tout chiffrage.
 
 **Les codes appartiennent au pouvoir adjudicateur.** Le lecteur accepte
 `03.02`, `3.2`, `01.02.03`, `03.02.A`, `1.01.10`, `A.1.2`, `03-02`,
@@ -528,7 +546,7 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-116 tests. Ceux de la chaîne Excel se skippent sans openpyxl, ceux de
+124 tests. Ceux de la chaîne Excel se skippent sans openpyxl, ceux de
 l'interface sans streamlit. L'écriture GitHub est testée avec un
 dépôt simulé — la suite ne touche jamais au réseau.
 

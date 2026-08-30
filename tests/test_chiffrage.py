@@ -1155,3 +1155,144 @@ def test_le_prix_est_ecrit_dans_la_feuille_du_poste(metre_multi, tmp_path):
     assert prix_ecrits("Lot 01") == len(rapport["chiffres"])
     assert prix_ecrits("Récapitulatif") == 0
     assert len(rapport["non_couverts"]) == 49
+
+
+# ── 15. Détection des colonnes ──────────────────
+def _classeur(lignes, titre="Feuille"):
+    from openpyxl import Workbook
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = titre
+    for ligne in lignes:
+        ws.append(ligne)
+    return wb
+
+
+@pytest.fixture
+def metre_autre_commune(tmp_path, openpyxl_dispo):
+    """La disposition citée par l'audit : colonnes ailleurs, autres
+    intitulés, codes en 1.01.10, titre avant l'en-tête."""
+    wb = _classeur([
+        ["COMMUNE DE WEMMEL — MARCHÉ 2026/114"],
+        [],
+        ["Poste", "Description des travaux", "", "", "", "Unité",
+         "Quantité", "", "Prix unitaire", "Total"],
+        ["1.01.10", "Démolition de cloisons légères", "", "", "", "m2", 38,
+         "", None, None],
+        ["1.01.20", "Enduit de façade minéral armé", "", "", "", "m2", 165,
+         "", None, None],
+        ["2.03.05", "Peinture des plafonds intérieurs", "", "", "", "m2", 210,
+         "", None, None],
+    ], titre="Inventaire")
+    chemin = tmp_path / "AUTRE.xlsx"
+    wb.save(str(chemin))
+    return chemin
+
+
+def test_detection_sur_une_disposition_inconnue(metre_autre_commune):
+    from openpyxl import load_workbook
+
+    from chiffrage.detection_colonnes import detecter
+
+    d = detecter(load_workbook(str(metre_autre_commune)).active)
+    assert d["manquants"] == []
+    assert d["champs"]["code"] == 1          # A
+    assert d["champs"]["designation"] == 2   # B
+    assert d["champs"]["unite"] == 6         # F
+    assert d["champs"]["quantite"] == 7      # G
+    assert d["champs"]["pu"] == 9            # I
+
+
+def test_le_contenu_tranche_pour_la_colonne_des_codes(openpyxl_dispo,
+                                                       tmp_path):
+    """Un métré titre couramment « N° » le simple compteur de lignes,
+    juste avant la vraie colonne des codes. Se fier à l'intitulé
+    partait sur le compteur, et plus aucun poste n'était lu."""
+    from openpyxl import load_workbook
+
+    from chiffrage.detection_colonnes import detecter
+
+    wb = _classeur([
+        ["N°", "Poste", "Désignation", "Unité", "Quantité", "PU"],
+        [1, "01.01", "Démolition", "m2", 38, None],
+        [2, "01.02", "Enduit", "m2", 165, None],
+        [3, "01.03", "Peinture", "m2", 210, None],
+    ])
+    chemin = tmp_path / "compteur.xlsx"
+    wb.save(str(chemin))
+
+    d = detecter(load_workbook(str(chemin)).active)
+    assert d["champs"]["code"] == 2           # B, pas A
+    assert d["origines"]["code"] == "contenu"
+
+
+def test_detection_sans_aucun_entete(openpyxl_dispo, tmp_path):
+    """Sans en-tête, seul le contenu parle — et il suffit."""
+    from openpyxl import load_workbook
+
+    from chiffrage.detection_colonnes import detecter
+
+    wb = _classeur([
+        ["", "1.01", "Démolition", "", "m2", 38, None],
+        ["", "1.02", "Enduit", "", "m2", 165, None],
+        ["", "1.03", "Peinture", "", "m2", 210, None],
+        ["", "1.04", "Châssis", "", "m2", 26, None],
+    ])
+    chemin = tmp_path / "sans_entete.xlsx"
+    wb.save(str(chemin))
+
+    d = detecter(load_workbook(str(chemin)).active)
+    assert d["champs"]["code"] == 2
+    assert d["champs"]["quantite"] == 6
+    assert d["manquants"] == []
+
+
+def test_lecture_et_ecriture_suivent_les_colonnes_detectees(
+        metre_autre_commune, tmp_path):
+    """Le test qui compte : écrire le prix dans la mauvaise colonne
+    rendrait l'offre silencieusement fausse."""
+    from openpyxl import load_workbook
+
+    from chiffrage.metre_io import remplir_metre
+
+    mapping = {"1.01.10": "20.20", "1.01.20": "40.20", "2.03.05": "70.20"}
+    sortie = tmp_path / "offre.xlsx"
+    rapport = remplir_metre(str(metre_autre_commune), str(sortie),
+                             mapping=mapping)
+
+    assert rapport["postes"] == 3
+    assert len(rapport["chiffres"]) == 3
+    assert rapport["vides"] == []
+
+    ws = load_workbook(str(sortie)).active
+    for row in ws.iter_rows(min_row=4):
+        if not row[0].value:
+            continue
+        assert isinstance(row[8].value, (int, float))   # I : le prix
+        assert row[6].value                             # G : la quantité, intacte
+
+
+def test_colonnes_imposees_priment_sur_la_detection(metre_autre_commune):
+    """L'humain doit pouvoir corriger une détection fausse."""
+    from chiffrage.metre_io import lire_metre_complet
+
+    lecture = lire_metre_complet(str(metre_autre_commune),
+                                  colonnes={"quantite": 7, "unite": 6,
+                                             "code": 1, "pu": 9})
+    assert len(lecture["postes"]) == 3
+    assert lecture["colonnes"]["Inventaire"]["pu"] == 9
+
+
+def test_intitules_synonymes_sont_reconnus(openpyxl_dispo):
+    from chiffrage.detection_colonnes import _champ_de
+
+    assert _champ_de("Qté") == "quantite"
+    assert _champ_de("Métré") == "quantite"
+    assert _champ_de("P.U. HTVA") == "pu"
+    assert _champ_de("Prix total") == "montant"
+    assert _champ_de("Libellé") == "designation"
+    assert _champ_de("Un.") == "unite"
+    # « Unité » ne doit pas être happé par « quantité ».
+    assert _champ_de("Unité") == "unite"
+    assert _champ_de("Observations") is None

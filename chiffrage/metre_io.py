@@ -84,13 +84,49 @@ def est_code_poste(valeur):
     code = valeur.strip()
     return bool(RE_CODE_POSTE.match(code)) and any(c.isdigit() for c in code)
 
-COL_CODE = 2       # B
-COL_DESIGNATION = 3  # C
-COL_NATURE = 4     # D
-COL_UNITE = 5      # E
-COL_QUANTITE = 6   # F
-COL_PU = 7         # G
-COL_MONTANT = 8    # H
+# Disposition du métré d'entraînement. Elle ne vaut QUE comme repli :
+# les colonnes d'un métré reçu sont détectées à la lecture (voir
+# detection_colonnes.py). Les coder en dur revenait à ne savoir lire
+# qu'un seul pouvoir adjudicateur — et, pire, à écrire le prix dans la
+# mauvaise colonne chez les autres.
+COLONNES_DEFAUT = {
+    "code": 2,          # B
+    "designation": 3,   # C
+    "nature": 4,        # D
+    "unite": 5,         # E
+    "quantite": 6,      # F
+    "pu": 7,            # G
+    "montant": 8,       # H
+}
+
+COL_CODE = COLONNES_DEFAUT["code"]
+COL_DESIGNATION = COLONNES_DEFAUT["designation"]
+COL_NATURE = COLONNES_DEFAUT["nature"]
+COL_UNITE = COLONNES_DEFAUT["unite"]
+COL_QUANTITE = COLONNES_DEFAUT["quantite"]
+COL_PU = COLONNES_DEFAUT["pu"]
+COL_MONTANT = COLONNES_DEFAUT["montant"]
+
+
+def _colonnes_de(ws, imposees=None):
+    """Les colonnes de CETTE feuille : imposées, détectées, ou par défaut."""
+    from .detection_colonnes import detecter
+
+    if imposees:
+        return dict(COLONNES_DEFAUT, **imposees)
+    detection = detecter(ws)
+    if detection["manquants"]:
+        # Détection incomplète : on ne devine pas la moitié d'un
+        # tableau. Le repli est explicite, et l'interface le signale.
+        return dict(COLONNES_DEFAUT, **detection["champs"])
+    return detection["champs"]
+
+
+def _valeur(row, colonne):
+    """Cellule d'une ligne, ou None si la colonne n'existe pas ici."""
+    if not colonne or len(row) < colonne:
+        return None
+    return row[colonne - 1].value
 
 # Équivalences d'écriture admises pour la comparaison d'unités. Volontairement
 # minimaliste : uniquement des variantes typographiques du MÊME unité, jamais
@@ -144,15 +180,16 @@ def feuilles_avec_postes(chemin):
     inventaire = []
     for nom in wb.sheetnames:
         ws = wb[nom]
+        cols = _colonnes_de(ws)
         nb = sum(
             1 for row in ws.iter_rows(min_row=1, max_row=ws.max_row)
-            if len(row) >= COL_QUANTITE
-            and est_code_poste(row[COL_CODE - 1].value)
+            if est_code_poste(_valeur(row, cols["code"]))
         )
         minuscule = nom.lower()
         inventaire.append({
             "nom": nom,
             "nb_postes": nb,
+            "colonnes": cols,
             "recapitulatif": any(mot in minuscule for mot in
                                   ("recap", "récap", "synth", "total",
                                    "resume", "résumé")),
@@ -173,7 +210,7 @@ def _feuilles_a_lire(wb, feuilles):
     return list(feuilles)
 
 
-def lire_metre_complet(chemin, feuilles=None):
+def lire_metre_complet(chemin, feuilles=None, colonnes=None):
     """
     Lit les postes d'un métré imposé, et rend AUSSI ce qu'il n'a pas su lire.
 
@@ -209,24 +246,25 @@ def lire_metre_complet(chemin, feuilles=None):
 
     noms = [n for n in _feuilles_a_lire(wb, feuilles) if n in wb.sheetnames]
     postes, anomalies, vus = [], [], {}
+    colonnes_par_feuille = {}
 
     for nom in noms:
         ws = wb[nom]
+        cols = _colonnes_de(ws, colonnes)
+        colonnes_par_feuille[nom] = cols
         ws_valeurs = (wb_valeurs[nom]
                        if wb_valeurs is not None and nom in wb_valeurs.sheetnames
                        else None)
 
         for row in ws.iter_rows(min_row=1, max_row=ws.max_row):
-            if len(row) < COL_QUANTITE:
-                continue
-            brut = row[COL_CODE - 1].value
+            brut = _valeur(row, cols["code"])
             if not est_code_poste(brut):
                 continue
             code = brut.strip()
             numero = row[0].row
-            designation = (row[COL_DESIGNATION - 1].value or "")
-            unite = (row[COL_UNITE - 1].value or "")
-            qte = row[COL_QUANTITE - 1].value
+            designation = _valeur(row, cols.get("designation")) or ""
+            unite = _valeur(row, cols.get("unite")) or ""
+            qte = _valeur(row, cols.get("quantite"))
 
             # Une ligne sans quantité NI désignation NI unité n'est
             # probablement pas un poste : un titre, une référence, un
@@ -291,7 +329,7 @@ def lire_metre_complet(chemin, feuilles=None):
             postes.append({
                 "code": code,
                 "designation": str(designation).strip(),
-                "nature": str(row[COL_NATURE - 1].value or "").strip(),
+                "nature": str(_valeur(row, cols.get("nature")) or "").strip(),
                 "unite": str(unite).strip(),
                 "quantite": float(qte),
                 "ligne": numero,
@@ -299,13 +337,14 @@ def lire_metre_complet(chemin, feuilles=None):
             })
 
     wb.close()
-    return {"postes": postes, "anomalies": anomalies, "feuilles": noms}
+    return {"postes": postes, "anomalies": anomalies, "feuilles": noms,
+            "colonnes": colonnes_par_feuille}
 
 
-def lire_metre(chemin, feuilles=None):
+def lire_metre(chemin, feuilles=None, colonnes=None):
     """Les seuls postes lisibles. Voir lire_metre_complet() pour ce qui
     a été écarté — et il vaut mieux le regarder."""
-    return lire_metre_complet(chemin, feuilles)["postes"]
+    return lire_metre_complet(chemin, feuilles, colonnes)["postes"]
 
 
 def remplir_metre(
@@ -315,6 +354,7 @@ def remplir_metre(
     params=None,
     tva=None,
     feuilles=None,
+    colonnes=None,
 ):
     """
     Recopie le métré imposé et y écrit les prix unitaires de la bibliothèque.
@@ -345,7 +385,7 @@ def remplir_metre(
     shutil.copyfile(chemin_metre, chemin_sortie)
     wb = load_workbook(chemin_sortie)   # PAS de data_only : cf. cartouche
 
-    lecture = lire_metre_complet(chemin_sortie, feuilles)
+    lecture = lire_metre_complet(chemin_sortie, feuilles, colonnes)
     postes, anomalies = lecture["postes"], lecture["anomalies"]
 
     chiffres, non_couverts, ecarts_unite = [], [], []
@@ -386,7 +426,9 @@ def remplir_metre(
         # même endroit — et le pouvoir adjudicateur recevrait un
         # classeur incohérent sans qu'aucune erreur ne soit levée.
         wb[poste["feuille"]].cell(
-            row=poste["ligne"], column=COL_PU, value=ref["pu_vente"])
+            row=poste["ligne"],
+            column=lecture["colonnes"][poste["feuille"]]["pu"],
+            value=ref["pu_vente"])
         montant = round(ref["pu_vente"] * poste["quantite"], 2)
         h = round(ref["heures_mo"] * poste["quantite"], 2)
         total_ht += montant
@@ -423,6 +465,7 @@ def remplir_metre(
         "non_couverts": non_couverts,
         "ecarts_unite": ecarts_unite,
         "feuilles": lecture["feuilles"],
+        "colonnes": lecture["colonnes"],
         "vides": [p["code"] for p in non_couverts] + [e["code"] for e in ecarts_unite],
         "total_ht": total_ht,
         "tva_taux": taux,

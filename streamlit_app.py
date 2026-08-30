@@ -34,6 +34,7 @@ from chiffrage.bibliotheque import (
 )
 from chiffrage.devis_xlsx import exporter_devis
 from chiffrage.controle_prix import analyser
+from chiffrage.detection_colonnes import CHAMPS, CHAMPS_REQUIS
 from chiffrage.depot_github import ErreurDepot, commiter_lexique
 from chiffrage.justification_xlsx import exporter_justification
 from chiffrage.lexique import (
@@ -50,6 +51,7 @@ from chiffrage.lexique import (
     vider_surcouche,
 )
 from chiffrage.gen_metre import generer_metre
+from openpyxl.utils import get_column_letter
 from chiffrage.metre_io import (
     feuilles_avec_postes,
     lire_metre_complet,
@@ -263,8 +265,68 @@ def _repondre_a_un_metre(params):
         else:
             retenues = [inventaire[0]["nom"]]
 
+        # ── Correspondance des colonnes ────────────────
+        # Les colonnes étaient codées en dur : chez un autre pouvoir
+        # adjudicateur, l'outil ne lisait rien — ou écrivait le prix
+        # dans la mauvaise colonne, ce qui est pire. La détection
+        # PROPOSE, l'humain valide avant tout chiffrage.
+        detectees = next(
+            (f["colonnes"] for f in inventaire if f["nom"] == retenues[0]),
+            None)
+        colonnes = dict(detectees or {})
+
+        incertaines = [c for c in CHAMPS_REQUIS if c not in colonnes]
+        libelle_champ = {
+            "code": "Code du poste", "designation": "Désignation",
+            "nature": "Nature", "unite": "Unité", "quantite": "Quantité",
+            "pu": "Prix unitaire (colonne à remplir)", "montant": "Montant",
+        }
+        resume = " · ".join(
+            f"{libelle_champ[c]} = {get_column_letter(colonnes[c])}"
+            for c in CHAMPS_REQUIS if c in colonnes)
+
+        with st.expander(
+            ("⚠️ Colonnes à confirmer" if incertaines
+             else f"🔎 Colonnes détectées — {resume}"),
+            expanded=bool(incertaines),
+        ):
+            st.caption(
+                "Corriger ici si la détection s'est trompée. Un prix "
+                "écrit dans la mauvaise colonne rendrait l'offre "
+                "silencieusement fausse."
+            )
+            lettres = [get_column_letter(i) for i in range(1, 31)]
+            gauche, droite = st.columns(2)
+            for i, champ in enumerate(CHAMPS):
+                zone = gauche if i % 2 == 0 else droite
+                actuelle = colonnes.get(champ)
+                options = ["— absente —"] + lettres
+                index = (lettres.index(get_column_letter(actuelle)) + 1
+                          if actuelle and actuelle <= 30 else 0)
+                choix = zone.selectbox(
+                    libelle_champ[champ] + (" *" if champ in CHAMPS_REQUIS
+                                             else ""),
+                    options, index=index, key=f"col_{champ}")
+                if choix == "— absente —":
+                    colonnes.pop(champ, None)
+                else:
+                    colonnes[champ] = lettres.index(choix) + 1
+
+            manquants = [libelle_champ[c] for c in CHAMPS_REQUIS
+                          if c not in colonnes]
+            if manquants:
+                st.error(
+                    "Champs indispensables non renseignés : "
+                    + ", ".join(manquants)
+                    + ". Sans eux, impossible de savoir quoi chiffrer, où "
+                      "écrire, ni de vérifier les unités.",
+                    icon="🛑")
+
+        if any(c not in colonnes for c in CHAMPS_REQUIS):
+            return
+
         try:
-            lecture = lire_metre_complet(str(chemin_metre), retenues)
+            lecture = lire_metre_complet(str(chemin_metre), retenues, colonnes)
         except Exception as err:
             st.error(f"Lecture impossible : {err}", icon="🛑")
             return
@@ -307,6 +369,7 @@ def _repondre_a_un_metre(params):
         signature = (
             hashlib.sha256(fichier.getvalue()).hexdigest(),
             tuple(retenues),
+            tuple(sorted(colonnes.items())),
             st.session_state.get("lexique_version", 0),
         )
         if st.session_state.get("signature") != signature:
@@ -459,6 +522,7 @@ def _repondre_a_un_metre(params):
                 rapport = remplir_metre(
                     str(entree), str(sortie), mapping=mapping,
                     params=params, tva=tva, feuilles=retenues,
+                    colonnes=colonnes,
                 )
                 octets = sortie.read_bytes()
 

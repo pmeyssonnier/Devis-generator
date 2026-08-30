@@ -225,3 +225,37 @@ def test_les_ecarts_de_calibration_sont_affiches_en_pourcents(app):
 
     # Un écart réel de -11,5 % ne doit jamais s'afficher à -0,1.
     assert max(abs(v) for v in affiche["Écart"]) > 1.0
+
+
+def test_les_colonnes_detectees_sont_proposees_a_la_validation(app, tmp_path):
+    """La détection PROPOSE, l'humain valide : un prix écrit dans la
+    mauvaise colonne rendrait l'offre silencieusement fausse."""
+    from openpyxl import Workbook
+
+    chemin = tmp_path / "AUTRE.xlsx"
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Inventaire"
+    ws.append(["COMMUNE DE WEMMEL — MARCHÉ 2026/114"])
+    ws.append([])
+    ws.append(["Poste", "Description des travaux", "", "", "", "Unité",
+                "Quantité", "", "Prix unitaire", "Total"])
+    for code, lib, qte in [("1.01.10", "Démolition de cloisons", 38),
+                            ("1.01.20", "Enduit de façade armé", 165),
+                            ("2.03.05", "Peinture des plafonds", 210)]:
+        ws.append([code, lib, "", "", "", "m2", qte, "", None, None])
+    wb.save(str(chemin))
+
+    app.file_uploader[0].set_value((chemin.name, chemin.read_bytes(),
+                                     XLSX)).run()
+    assert not app.exception, [e.value for e in app.exception]
+
+    choix = {s.label: s.value for s in app.selectbox
+             if s.key and s.key.startswith("col_")}
+    assert choix["Code du poste *"] == "A"
+    assert choix["Unité *"] == "F"
+    assert choix["Quantité *"] == "G"
+    assert choix["Prix unitaire (colonne à remplir) *"] == "I"
+
+    # Et les postes sont lus : avant, ce métré rendait zéro poste.
+    assert {m.label: m.value for m in app.metric}["Postes lus"] == "3"
