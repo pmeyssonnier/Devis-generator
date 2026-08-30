@@ -68,6 +68,15 @@ et des rendements. Point d'entrée : `python -m chiffrage calibration`.
 
 ---
 
+## Reprendre le projet ailleurs
+
+**[`PASSATION.md`](PASSATION.md)** — le contexte complet en un fichier :
+besoin métier et contraintes légales, état réel des données (avec ce qui
+est reconstruit et ce qui est mesuré), décisions structurantes et leur
+*pourquoi*, et la liste des pièges déjà payés — openpyxl, Streamlit, et
+surtout le comportement de Streamlit Cloud au déploiement. À fournir
+d'abord à qui reprend le travail.
+
 ## Utilisation
 
 ### L'interface web (le plus simple)
