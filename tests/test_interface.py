@@ -156,3 +156,23 @@ def test_banc_d_essai_s_ouvre_sur_un_exemple_coherent(app):
     # L'exemple doit trouver « Nettoyage haute pression de façade ».
     assert premier.iloc[0]["Code"] == "40.10"
     assert premier.iloc[0]["Score"] > 0.30
+
+
+def test_controle_des_prix_apparait_apres_chiffrage(app, tmp_path):
+    """Le contrôle doit s'afficher là où l'offre vient d'être produite —
+    c'est le dernier moment où il sert à quelque chose."""
+    from chiffrage.gen_metre import generer_metre
+
+    metre = tmp_path / "METRE.xlsx"
+    generer_metre(str(metre))
+    app.file_uploader[0].set_value((metre.name, metre.read_bytes(),
+                                     XLSX)).run()
+    [b for b in app.button if "Chiffrer" in b.label][0].click().run()
+    assert not app.exception, [e.value for e in app.exception]
+
+    mesures = {m.label: m.value for m in app.metric}
+    assert "Par heure travaillée" in mesures
+    assert "Rabais maximal" in mesures
+    # Le dossier de justification doit être téléchargeable dans la foulée.
+    assert any("dossier" in d.label.lower()
+                for d in app.get("download_button"))

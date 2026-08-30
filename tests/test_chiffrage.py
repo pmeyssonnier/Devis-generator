@@ -753,3 +753,176 @@ def test_fichier_absent_nest_pas_une_erreur():
 
     assert depot_github.lire_fichier(
         "f", "moi/depot", "jeton", _appel=_appel) == (None, None)
+
+
+# ── 11. Contrôle des prix ─────────────────────────
+from chiffrage import controle_prix  # noqa: E402
+
+
+@pytest.fixture
+def offre_type():
+    """Une offre de façade : quatre postes, dont un très dominant."""
+    b = moteur.calcul_bordereau()
+    return [
+        {"code_ouv": c, "qte": q, "pu_vente": b[c]["pu_vente"]}
+        for c, q in [("40.20", 180), ("40.30", 180), ("10.20", 180),
+                      ("70.50", 95)]
+    ]
+
+
+def test_couverture_horaire_est_arithmetiquement_juste(offre_type):
+    b = moteur.calcul_bordereau()
+    c = controle_prix.couverture_horaire(offre_type, b)
+
+    total = sum(x["pu_vente"] * x["qte"] for x in offre_type)
+    achats = sum((b[x["code_ouv"]]["deb_mat"] + b[x["code_ouv"]]["deb_eqp"])
+                  * x["qte"] for x in offre_type)
+    heures = sum(b[x["code_ouv"]]["heures_mo"] * x["qte"] for x in offre_type)
+
+    assert c["total"] == pytest.approx(total, abs=0.01)
+    assert c["par_heure"] == pytest.approx((total - achats) / heures, abs=0.01)
+    assert c["couvre"] is True
+
+
+def test_rabais_maximal_amene_exactement_au_plancher(offre_type):
+    """Le chiffre qu'on veut AVANT de négocier : à ce rabais précis,
+    l'offre couvre ses coûts et rien de plus."""
+    b = moteur.calcul_bordereau()
+    rabais = controle_prix.rabais_maximal(offre_type, b)
+    au_plancher = controle_prix.couverture_horaire(offre_type, b,
+                                                    rabais=rabais)
+    assert au_plancher["par_heure"] == pytest.approx(
+        au_plancher["plancher"], abs=0.05)
+    assert au_plancher["couvre"] is True
+
+
+def test_un_rabais_au_dela_du_maximal_declenche_l_alerte(offre_type):
+    b = moteur.calcul_bordereau()
+    trop = controle_prix.rabais_maximal(offre_type, b) + 0.05
+    rapport = controle_prix.analyser(offre_type, b, rabais=trop)
+    critiques = [a for a in rapport["alertes"]
+                  if a["niveau"] == controle_prix.CRITIQUE]
+    assert [a["code"] for a in critiques] == ["couverture"]
+    assert rapport["indicateurs"]["couvre"] is False
+
+
+def test_sans_rabais_l_offre_couvre_toujours(offre_type):
+    """Par construction pu = déboursé × K : tant que personne ne force
+    un prix, la couverture est garantie. Le jour où la surcharge
+    manuelle existera, ce test devra rester vrai sans elle."""
+    b = moteur.calcul_bordereau()
+    rapport = controle_prix.analyser(offre_type, b)
+    assert rapport["indicateurs"]["couvre"] is True
+    assert not [a for a in rapport["alertes"]
+                 if a["code"] == "couverture"]
+
+
+def test_un_poste_dominant_est_signale(offre_type):
+    b = moteur.calcul_bordereau()
+    rapport = controle_prix.analyser(offre_type, b)
+    poids = [a for a in rapport["alertes"] if a["code"] == "poids_poste"]
+    assert "40.20" in [a["poste"] for a in poids]
+
+
+def test_part_des_rendements_non_valides_est_mesuree():
+    """17,9 % sur le métré type — sous le seuil, mais la valeur doit
+    être calculée : c'est elle qui dira quand la calibration presse."""
+    b = moteur.calcul_bordereau()
+    lignes = [{"code_ouv": c, "qte": 10, "pu_vente": b[c]["pu_vente"]}
+              for c in ("40.20", "90.10")]      # 90.10 est à valider
+    rapport = controle_prix.analyser(lignes, b)
+    assert 0 < rapport["indicateurs"]["part_non_validee"] < 1
+    assert [a for a in rapport["alertes"]
+            if a["code"] == "rendements_non_valides"]
+
+
+def test_ecart_a_l_historique_est_signale(offre_type):
+    b = moteur.calcul_bordereau()
+    ancien = b["40.20"]["pu_vente"] * 0.7      # 30 % moins cher ailleurs
+    rapport = controle_prix.analyser(offre_type, b,
+                                      historique={"40.20": ancien})
+    ecarts = [a for a in rapport["alertes"] if a["code"] == "ecart_historique"]
+    assert ecarts and ecarts[0]["poste"] == "40.20"
+
+
+def test_alertes_triees_du_plus_grave_au_plus_leger(offre_type):
+    b = moteur.calcul_bordereau()
+    rapport = controle_prix.analyser(offre_type, b, rabais=0.30)
+    niveaux = [a["niveau"] for a in rapport["alertes"]]
+    ordre = {controle_prix.CRITIQUE: 0, controle_prix.ATTENTION: 1,
+             controle_prix.INFO: 2}
+    assert niveaux == sorted(niveaux, key=lambda n: ordre[n])
+
+
+# ── 12. Dossier de justification ──────────────────
+def test_dossier_de_justification(tmp_path, openpyxl_dispo):
+    from openpyxl import load_workbook
+
+    from chiffrage.justification_xlsx import exporter_justification
+
+    chemin = tmp_path / "just.xlsx"
+    _, nb = exporter_justification(
+        ["40.20", "70.50"], str(chemin),
+        marche={"reference": "CSC 2026-TP-0147",
+                 "pouvoir_adjudicateur": "Commune de Schaerbeek"})
+    assert nb == 2
+    wb = load_workbook(str(chemin))
+    assert wb.sheetnames == ["Courrier", "Poste 40.20", "Poste 70.50"]
+
+    textes = [c.value for r in wb["Courrier"].iter_rows() for c in r
+              if isinstance(c.value, str)]
+    assert any("art. 36" in t for t in textes)
+    assert any(biblio.ENTREPRISE["nom"] in t for t in textes)
+    assert any("relire et à signer" in t for t in textes)
+
+
+def test_dossier_porte_toutes_les_ressources_du_poste(tmp_path,
+                                                       openpyxl_dispo):
+    from openpyxl import load_workbook
+
+    from chiffrage.justification_xlsx import exporter_justification
+
+    chemin = tmp_path / "just.xlsx"
+    exporter_justification(["40.20"], str(chemin))
+    ws = load_workbook(str(chemin))["Poste 40.20"]
+    codes = {c.value for r in ws.iter_rows() for c in r
+             if isinstance(c.value, str) and c.value.startswith(("MO.", "MA.", "EQ."))}
+    attendus = {comp["code_res"] for comp in biblio.COMPOSITION
+                 if comp["code_ouv"] == "40.20"}
+    assert attendus <= codes
+
+
+def test_dossier_formules_ancrees_sur_leur_ligne(tmp_path, openpyxl_dispo):
+    """Le destinataire doit pouvoir refaire le calcul dans son tableur."""
+    from openpyxl import load_workbook
+
+    from chiffrage.justification_xlsx import exporter_justification
+
+    chemin = tmp_path / "just.xlsx"
+    exporter_justification(["40.20"], str(chemin))
+    ws = load_workbook(str(chemin))["Poste 40.20"]
+    produits = 0
+    for row in ws.iter_rows():
+        for cell in row:
+            if isinstance(cell.value, str) and cell.value.startswith("=E"):
+                produits += 1
+                assert cell.value == f"=E{cell.row}*F{cell.row}"
+    assert produits == len([c for c in biblio.COMPOSITION
+                             if c["code_ouv"] == "40.20"])
+
+
+def test_dossier_refuse_un_poste_inconnu(tmp_path, openpyxl_dispo):
+    """Un dossier amputé d'un poste demandé se retourne contre son
+    auteur : mieux vaut aucun fichier."""
+    from chiffrage.justification_xlsx import exporter_justification
+
+    with pytest.raises(ValueError, match="99.99"):
+        exporter_justification(["40.20", "99.99"], str(tmp_path / "j.xlsx"))
+    assert not (tmp_path / "j.xlsx").exists()
+
+
+def test_dossier_refuse_une_liste_vide(tmp_path, openpyxl_dispo):
+    from chiffrage.justification_xlsx import exporter_justification
+
+    with pytest.raises(ValueError):
+        exporter_justification([], str(tmp_path / "j.xlsx"))

@@ -32,7 +32,9 @@ from chiffrage.bibliotheque import (
     PARAMS,
 )
 from chiffrage.devis_xlsx import exporter_devis
+from chiffrage.controle_prix import analyser
 from chiffrage.depot_github import ErreurDepot, commiter_lexique
+from chiffrage.justification_xlsx import exporter_justification
 from chiffrage.lexique import (
     DEMOLITION,
     EXPRESSIONS,
@@ -420,6 +422,101 @@ def _repondre_a_un_metre(params):
                 "colonne des prix unitaires remplie : ses quantités et ses "
                 "formules sont intactes."
             )
+
+            # ── Contrôle des prix avant dépôt ──────────────
+            st.divider()
+            st.subheader("Contrôle des prix")
+            st.caption(
+                "Deux risques opposés : trop bas, l'offre est écartée pour "
+                "prix anormalement bas (art. 36 AR 18/04/2017) ou le "
+                "chantier s'exécute à perte ; trop haut, le marché est "
+                "perdu. Ces contrôles regardent l'offre depuis l'intérieur "
+                "de l'entreprise — les prix des concurrents, personne ne "
+                "les a au moment de déposer."
+            )
+
+            lignes_controle = [
+                {"code_ouv": c["code_ouv"], "qte": c["quantite"],
+                 "pu_vente": c["pu"]}
+                for c in rapport["chiffres"]
+            ]
+
+            rabais = st.slider(
+                "Rabais commercial simulé", 0.0, 30.0, 0.0, 0.5,
+                format="%.1f %%",
+                help="Le seuil au-delà duquel l'offre cesse de couvrir "
+                      "ses coûts est calculé juste en dessous.",
+            ) / 100.0
+
+            controle = analyser(lignes_controle, b, params=params,
+                                 rabais=rabais)
+            ind = controle["indicateurs"]
+
+            m1, m2, m3 = st.columns(3)
+            m1.metric(
+                "Par heure travaillée", f"{ind['par_heure']:.2f} €",
+                f"{ind['par_heure'] - ind['plancher']:+.2f} € / plancher",
+                delta_color="normal" if ind["couvre"] else "inverse",
+                help="Matériaux et matériel payés, ce que l'offre laisse "
+                      "par heure de main-d'œuvre. Sous le plancher, chaque "
+                      "heure travaillée coûte de l'argent.",
+            )
+            m2.metric("Rabais maximal",
+                       f"{ind['rabais_maximal'] * 100:.1f} %",
+                       help="Au-delà, l'offre ne couvre plus ses coûts.")
+            m3.metric("Top 3 des postes",
+                       f"{ind['concentration_top3'] * 100:.0f} %",
+                       help="Part du total portée par trois postes.")
+
+            for alerte in controle["alertes"]:
+                texte = f"**{alerte['titre']}**  \n{alerte['detail']}"
+                if alerte["niveau"] == "critique":
+                    st.error(texte, icon="🛑")
+                elif alerte["niveau"] == "attention":
+                    st.warning(texte, icon="⚠️")
+                else:
+                    st.info(texte, icon="💡")
+            if not controle["alertes"]:
+                st.success("Aucun point d'attention.", icon="✅")
+
+            # ── Dossier de justification ───────────────
+            with st.expander("📄 Dossier de justification de prix"):
+                st.markdown(
+                    "Si le pouvoir adjudicateur conteste un prix, il doit "
+                    "demander une justification écrite avant d'écarter "
+                    "l'offre — et le délai de réponse est court. Ce "
+                    "dossier contient, pour chaque poste visé, la "
+                    "décomposition qui a **servi** à établir l'offre : "
+                    "ressources, quantités, prix d'achat, déboursés, "
+                    "coefficient. C'est ce qui la rend crédible."
+                )
+                defaut = [p["code_ouv"] for p in controle["postes"][:3]]
+                a_justifier = st.multiselect(
+                    "Postes à justifier",
+                    sorted({p["code_ouv"] for p in controle["postes"]}),
+                    default=defaut,
+                    format_func=lambda c: _libelle_ouvrage(c, b),
+                )
+                if a_justifier:
+                    with TemporaryDirectory() as tmp:
+                        cible = Path(tmp) / "justification.xlsx"
+                        exporter_justification(
+                            a_justifier, str(cible),
+                            marche={"reference": Path(fichier.name).stem},
+                            params=params,
+                        )
+                        octets_just = cible.read_bytes()
+                    st.download_button(
+                        "⬇️ Télécharger le dossier",
+                        octets_just,
+                        file_name=f"JUSTIFICATION_{datetime.now():%Y%m%d_%H%M}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument."
+                              "spreadsheetml.sheet",
+                    )
+                    st.caption(
+                        "La lettre d'accompagnement est le premier onglet : "
+                        "à relire et à signer avant envoi."
+                    )
 
         # ── Réutiliser la correspondance ─────────────────────────────
         with st.expander("♻️ Réutiliser cette correspondance"):

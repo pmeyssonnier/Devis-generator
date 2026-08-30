@@ -246,6 +246,8 @@ exporter_devis(d, "devis_2026-042.xlsx",
 | `suggestion.py` | appariement poste imposé → ouvrage, à partir du libellé | — |
 | `lexique.py` | vocabulaire de CSC → vocabulaire de la bibliothèque, facette d'opération | — |
 | `depot_github.py` | écrit le lexique appris dans le dépôt (API GitHub, urllib) | — |
+| `controle_prix.py` | relit une offre avant dépôt : couverture, rabais maximal, alertes | — |
+| `justification_xlsx.py` | dossier de justification de prix (art. 36) | openpyxl |
 | `gen_metre.py` | métré de marché public fictif (49 postes, 10 lots) pour s'entraîner | openpyxl |
 | `metre_io.py` | lecture d'un métré imposé + remplissage de l'offre | openpyxl |
 | `__main__.py` | ligne de commande | — |
@@ -327,6 +329,57 @@ postes restés vides ; cette liste doit être à **zéro** avant envoi.
 
 **TVA.** 6 % uniquement si logement de plus de dix ans, usage principalement
 privé, facturation au consommateur final. **En marché public : 21 %.**
+
+---
+
+## Contrôle des prix avant dépôt
+
+Deux risques opposés : **trop bas**, l'offre est écartée pour prix
+anormalement bas (art. 36 AR 18/04/2017) ou le chantier s'exécute à
+perte ; **trop haut**, le marché est perdu.
+
+Le pouvoir adjudicateur juge « anormalement bas » en comparant les
+offres entre elles — comparaison inaccessible au moment de déposer,
+puisque personne n'a les prix des concurrents. `controle_prix.py`
+regarde donc l'offre **depuis l'intérieur de l'entreprise** : est-ce
+que ce prix couvre ce que ce travail coûte ? C'est une autre
+question, et la seule qu'on puisse trancher seul.
+
+**L'indicateur central** est ce que l'offre laisse par heure de
+main-d'œuvre, matériaux et matériel payés :
+
+```
+(montant encaissé − matériaux − matériel) / heures de main-d'œuvre
+```
+
+à comparer au plancher — coût horaire complet majoré des frais
+généraux et de chantier, **marge et aléas exclus** : on cherche le
+point où l'on cesse de gagner, pas celui où l'on vise.
+
+D'où le **rabais maximal**, le chiffre qu'on veut connaître *avant* de
+négocier et non après : la remise au-delà de laquelle l'offre ne
+couvre plus ses coûts.
+
+S'y ajoutent les alertes par poste — poids dans l'offre, prix dominé
+par le rendement (donc par une estimation) ou par un prix d'achat
+(donc par un fournisseur), écart à un marché antérieur, et part du
+montant reposant sur des rendements jamais validés.
+
+Le module ne fait **que de l'arithmétique**, délibérément : un
+contrôle de prix doit être vérifiable à la main, pas cru sur parole.
+Les seuils sont des repères de relecture, pas des règles de droit —
+le seuil légal, la procédure et le délai de réponse figurent dans
+l'AR en vigueur et le plus souvent dans le CSC lui-même.
+
+### Dossier de justification
+
+Si le pouvoir adjudicateur conteste un prix, il doit demander une
+justification écrite avant d'écarter l'offre, et le délai est court.
+L'interface produit le dossier : une lettre d'accompagnement à
+relire et signer, puis un onglet par poste avec la décomposition qui
+a **servi** à établir l'offre — ressources, quantités, prix d'achat,
+déboursés par nature, coefficient. Ce ne sont pas des chiffres
+reconstitués pour l'occasion, et c'est ce qui les rend crédibles.
 
 ---
 
@@ -442,7 +495,7 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-69 tests. Ceux de la chaîne Excel se skippent sans openpyxl, ceux de
+87 tests. Ceux de la chaîne Excel se skippent sans openpyxl, ceux de
 l'interface sans streamlit. L'écriture GitHub est testée avec un
 dépôt simulé — la suite ne touche jamais au réseau.
 
