@@ -4,7 +4,7 @@
     "libelle_res": "Chef de chantier",
     "type_res": "MO",
     "unite_res": "h",
-    "pu_res": 60.0,
+    "pu_res": 58.0,
     "note": "Coût entreprise COMPLET : salaire + ONSS patronale + pécule + jours fériés + assurance loi + déplacements + EPI. Surtout pas le brut."
   },
   {
@@ -83,7 +83,7 @@
     "libelle_res": "Sable de rivière 0/2",
     "type_res": "MAT",
     "unite_res": "m3",
-    "pu_res": 48.0
+    "pu_res": 50.0
   },
   {
     "code_res": "MA.03",
