@@ -894,3 +894,36 @@ def test_une_bibliotheque_plus_ancienne_que_lapp_ne_plante_pas(AppTest,
     at = AppTest.from_file(str(APP), default_timeout=240)
     at.run()
     assert not at.exception, [e.value for e in at.exception]
+
+
+def test_retirer_un_poste_du_devis(app):
+    """La corbeille du tableau marche, mais elle demande de cocher une
+    case minuscule puis de viser une icône au survol : sur un téléphone
+    c'est le geste qui rate. Le bouton doit retirer la ligne choisie —
+    celle-là et pas une autre."""
+    app.session_state["lignes_devis"] = [
+        {"code_ouv": "40.20", "qte": 1.0},
+        {"code_ouv": "40.30", "qte": 2.0},
+        {"code_ouv": "70.10", "qte": 3.0}]
+    app.run()
+    [s for s in app.selectbox if s.key == "devis_retirer"][0].set_value(1).run()
+    [b for b in app.button if b.key == "devis_retirer_ok"][0].click().run()
+    assert not app.exception, [e.value for e in app.exception]
+    assert [ligne["code_ouv"] for ligne in app.session_state["lignes_devis"]] == [
+        "40.20", "70.10"]
+
+
+def test_retirer_le_dernier_poste_ne_plante_pas(app):
+    """L'indice mémorisé par la liste déroulante survit à la
+    réexécution : après un retrait il peut désigner une ligne qui
+    n'existe plus."""
+    app.session_state["lignes_devis"] = [{"code_ouv": "40.20", "qte": 1.0},
+                                          {"code_ouv": "40.30", "qte": 2.0}]
+    app.run()
+    [s for s in app.selectbox if s.key == "devis_retirer"][0].set_value(1).run()
+    [b for b in app.button if b.key == "devis_retirer_ok"][0].click().run()
+    [b for b in app.button if b.key == "devis_retirer_ok"][0].click().run()
+    assert not app.exception, [e.value for e in app.exception]
+    assert app.session_state["lignes_devis"] == []
+    # Le devis vide ne doit pas non plus faire disparaître l'onglet.
+    assert any("Ajoute au moins un poste" in i.value for i in app.info)
