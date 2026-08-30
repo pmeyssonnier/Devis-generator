@@ -811,6 +811,153 @@ def test_valider_puis_douter_fait_bien_laller_retour(AppTest):
     assert doute in at.session_state["tables_editees"]["ouvrages_a_valider"]
 
 
+# ── Le champ suit ce qui est choisi ─────────────────────────────────────────
+
+def _rendements(at):
+    """L'atelier ouvre sur les taux : passer sur les rendements."""
+    [r for r in at.radio if "corriger" in (r.label or "").lower()][0].set_value(
+        "Un rendement (h/unité)").run()
+    assert not at.exception, [e.value for e in at.exception]
+    return at
+
+
+def _champ(at, cle):
+    return [n for n in at.number_input if n.key == cle][0]
+
+
+def _tables(at):
+    return at.session_state["tables_editees"]
+
+
+def _est_mo(tables, comp):
+    return tables["ressources_par_code"][comp["code_res"]]["type_res"] == "MO"
+
+
+def _indices_mo(tables):
+    """Les mêmes valeurs que celles proposées par la liste de l'app —
+    `.options` rendrait les libellés formatés, pas les indices."""
+    return [i for i, c in enumerate(tables["composition"])
+             if _est_mo(tables, c)]
+
+
+def _un_seul_ouvrier(at):
+    """Un indice de ligne MO sur un ouvrage qui n'en a qu'une : le relevé
+    s'y reporte entier, sans partage à expliquer."""
+    tables = _tables(at)
+    compo = tables["composition"]
+    return next(
+        i for i in _indices_mo(tables)
+        if sum(1 for c in compo
+                if c["code_ouv"] == compo[i]["code_ouv"] and _est_mo(tables, c))
+        == 1)
+
+
+def test_le_champ_de_prix_suit_la_ressource_choisie(app):
+    """Un widget à clé garde SA valeur d'une réexécution à l'autre :
+    `value=` n'est lu qu'à la première. Changer de ressource laissait
+    donc le prix de la précédente dans la case."""
+    from chiffrage.bibliotheque import RESSOURCES_PAR_CODE  # noqa: PLC0415
+
+    liste = [s for s in app.selectbox if s.key == "corr_res"][0]
+    autre = next(r["code_res"] for r in _tables(app)["ressources"]
+                  if r["pu_res"] != RESSOURCES_PAR_CODE[liste.value]["pu_res"])
+    liste.set_value(autre).run()
+    assert _champ(app, "corr_res_valeur").value == pytest.approx(
+        RESSOURCES_PAR_CODE[autre]["pu_res"])
+
+
+def test_appliquer_sans_rien_taper_ne_change_aucun_prix(app):
+    """Le scénario coûteux : choisir une ressource, toucher « Appliquer »
+    par réflexe, et lui écrire le prix de la ressource précédente. Un
+    prix faux, en un geste, sans rien à l'écran pour le dire."""
+    from chiffrage.bibliotheque import RESSOURCES_PAR_CODE  # noqa: PLC0415
+
+    liste = [s for s in app.selectbox if s.key == "corr_res"][0]
+    autre = next(r["code_res"] for r in _tables(app)["ressources"]
+                  if r["pu_res"] != RESSOURCES_PAR_CODE[liste.value]["pu_res"])
+    liste.set_value(autre).run()
+    [b for b in app.button if b.key == "corr_res_ok"][0].click().run()
+
+    assert app.session_state["tables_editees"]["ressources_par_code"][
+        autre]["pu_res"] == pytest.approx(RESSOURCES_PAR_CODE[autre]["pu_res"])
+    assert not [b for b in app.button if "Enregistrer" in b.label], (
+        "un simple changement de ressource s'est enregistré comme une "
+        "correction")
+
+
+def test_le_champ_de_rendement_suit_l_ouvrage_choisi(app):
+    _rendements(app)
+    liste = [s for s in app.selectbox if s.key == "corr_rend"][0]
+    compo = _tables(app)["composition"]
+    autre = next(i for i in _indices_mo(_tables(app))
+                  if compo[i]["qte_res"] != compo[liste.value]["qte_res"])
+    liste.set_value(autre).run()
+    assert _champ(app, "corr_rend_valeur").value == pytest.approx(
+        compo[autre]["qte_res"])
+
+
+# ── Calculer un rendement depuis un chantier ────────────────────────────────
+
+def _releve(at, quantite, personnes, heures_chacun):
+    _champ(at, "releve_qte").set_value(float(quantite)).run()
+    _champ(at, "releve_nb").set_value(int(personnes)).run()
+    _champ(at, "releve_duree").set_value(float(heures_chacun)).run()
+    assert not at.exception, [e.value for e in at.exception]
+    return at
+
+
+def test_la_calculette_attend_les_deux_nombres(app):
+    """Sans quantité ET sans heures, il n'y a pas de rendement : mieux
+    vaut ne rien proposer que proposer un nombre bâti sur une moitié de
+    relevé."""
+    _rendements(app)
+    assert not [b for b in app.button if b.key == "releve_reporter"]
+    _releve(app, quantite=12, personnes=1, heures_chacun=0)
+    assert not [b for b in app.button if b.key == "releve_reporter"]
+
+
+def test_la_calculette_reporte_le_quotient_dans_le_champ(app):
+    """Le geste réel : « on a fait 12 m2, à deux, de 8 h à 11 h 30 ».
+    Ce que la case doit recevoir, c'est 7 / 12 — pas 3,5 / 12, la durée
+    n'étant pas le total des heures d'homme."""
+    _rendements(app)
+    seul = _un_seul_ouvrier(app)
+    [s for s in app.selectbox if s.key == "corr_rend"][0].set_value(seul).run()
+    _releve(app, quantite=12, personnes=2, heures_chacun=3.5)
+
+    [b for b in app.button if b.key == "releve_reporter"][0].click().run()
+    assert _champ(app, "corr_rend_valeur").value == pytest.approx(
+        7 / 12, abs=1e-3)
+
+
+def test_le_report_ne_corrige_rien_tant_qu_on_n_applique_pas(app):
+    """La calculette remplace le geste « saisir », pas « appliquer » :
+    le nombre se voit avant d'entrer dans la table."""
+    _rendements(app)
+    seul = _un_seul_ouvrier(app)
+    [s for s in app.selectbox if s.key == "corr_rend"][0].set_value(seul).run()
+    avant = _tables(app)["composition"][seul]["qte_res"]
+    _releve(app, quantite=12, personnes=2, heures_chacun=3.5)
+    [b for b in app.button if b.key == "releve_reporter"][0].click().run()
+
+    assert app.session_state["tables_editees"]["composition"][seul][
+        "qte_res"] == pytest.approx(avant)
+
+    [b for b in app.button if b.key == "corr_rend_ok"][0].click().run()
+    assert app.session_state["tables_editees"]["composition"][seul][
+        "qte_res"] == pytest.approx(7 / 12, abs=1e-3)
+
+
+def test_un_releve_annonce_l_ecart_avec_la_bibliotheque(app):
+    """Un rendement relevé ne vaut que comparé à celui en place : c'est
+    l'écart qui dit s'il y a matière à corriger."""
+    _rendements(app)
+    _releve(app, quantite=12, personnes=2, heures_chacun=3.5)
+    dits = [m.value for m in app.markdown if "h/" in m.value]
+    assert any("bibliothèque" in t for t in dits), (
+        "le relevé s'affiche sans le rendement auquel il se compare")
+
+
 # ── Retrouver un code dans la bibliothèque ──────────────────────────────────
 
 def _table(app, colonne):

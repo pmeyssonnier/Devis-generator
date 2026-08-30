@@ -1583,7 +1583,97 @@ def test_commit_d_une_table_n_additionne_rien():
     assert "ressources" in vu["message"]
 
 
-# ── 12. Reprendre un devis enregistré ───────────────────────────────────────
+# ── 19. Relevé de chantier ─────────────────────────────────────────────────
+def _un_ouvrage(nb_lignes_mo):
+    """Un code d'ouvrage ayant exactement ce nombre de lignes MO."""
+    compte = {}
+    for comp in biblio.COMPOSITION:
+        if biblio.RESSOURCES_PAR_CODE[comp["code_res"]]["type_res"] == "MO":
+            compte[comp["code_ouv"]] = compte.get(comp["code_ouv"], 0) + 1
+    codes = sorted(c for c, n in compte.items() if n == nb_lignes_mo)
+    assert codes, f"aucun ouvrage à {nb_lignes_mo} ligne(s) de main-d'œuvre"
+    return codes[0]
+
+
+def test_un_releve_est_le_quotient_des_heures_par_la_quantite():
+    """Le seul calcul que le chef d'entreprise faisait de tête sur le
+    chantier — et donc celui qu'il ne doit plus faire."""
+    r = moteur.releve_rendement(_un_ouvrage(1), quantite=12, heures=7)
+    assert r["rendement_observe"] == pytest.approx(7 / 12, abs=1e-4)
+
+
+def test_les_heures_relevees_se_repartissent_au_prorata():
+    """Sept ouvrages ont deux lignes de main-d'œuvre. Le relevé donne un
+    total : la somme des propositions doit le rendre entier, et le
+    partage suivre la proportion en place — pas un partage inventé."""
+    code = _un_ouvrage(2)
+    r = moteur.releve_rendement(code, quantite=5, heures=20)
+
+    assert sum(x["propose"] for x in r["lignes"]) == pytest.approx(
+        r["rendement_observe"], abs=1e-3)
+    assert sum(x["part"] for x in r["lignes"]) == pytest.approx(1.0, abs=1e-3)
+    facteurs = [x["propose"] / x["qte_res"] for x in r["lignes"]]
+    assert max(facteurs) - min(facteurs) < 1e-3, (
+        "les lignes ne sont pas corrigées dans la même proportion")
+
+
+def test_un_releve_se_compare_au_rendement_en_place():
+    """Un relevé qui confirme la bibliothèque doit sortir un écart nul :
+    c'est ce qui permet de lever un ⚠️ en connaissance de cause."""
+    code = _un_ouvrage(1)
+    actuel = sum(c["qte_res"] for c in biblio.COMPOSITION
+                  if c["code_ouv"] == code
+                  and biblio.RESSOURCES_PAR_CODE[
+                      c["code_res"]]["type_res"] == "MO")
+    r = moteur.releve_rendement(code, quantite=10, heures=10 * actuel)
+    assert r["rendement_actuel"] == pytest.approx(actuel, abs=1e-4)
+    assert r["ecart"] == pytest.approx(0.0, abs=1e-3)
+
+
+def test_un_releve_incomplet_est_refuse_plutot_que_devine():
+    """Zéro heure ferait une main-d'œuvre gratuite, zéro quantité une
+    division par zéro. Dans les deux cas, refuser vaut mieux que rendre
+    un nombre que personne ne saurait interpréter."""
+    code = _un_ouvrage(1)
+    with pytest.raises(ValueError):
+        moteur.releve_rendement(code, quantite=0, heures=7)
+    with pytest.raises(ValueError):
+        moteur.releve_rendement(code, quantite=12, heures=0)
+    with pytest.raises(KeyError):
+        moteur.releve_rendement("99.99", quantite=12, heures=7)
+
+
+def test_un_releve_ne_corrige_rien_par_lui_meme():
+    """Le relevé PROPOSE, l'humain applique. S'il écrivait dans les
+    tables, une saisie de chantier changerait des prix sans qu'aucun
+    écran ne l'annonce."""
+    code = _un_ouvrage(1)
+    avant = moteur.calcul_bordereau()[code]["pu_vente"]
+    moteur.releve_rendement(code, quantite=1, heures=99)
+    assert moteur.calcul_bordereau()[code]["pu_vente"] == avant
+
+
+def test_un_releve_lit_les_tables_qu_on_lui_donne():
+    """Pendant une séance de correction, la référence est la copie de
+    travail — sinon l'écart s'afficherait contre des valeurs que
+    l'utilisateur vient justement de remplacer."""
+    import copy
+
+    code = _un_ouvrage(1)
+    tables = copy.deepcopy(moteur.tables_courantes())
+    ligne = next(c for c in tables["composition"]
+                  if c["code_ouv"] == code
+                  and tables["ressources_par_code"][
+                      c["code_res"]]["type_res"] == "MO")
+    ligne["qte_res"] *= 2
+
+    r = moteur.releve_rendement(code, quantite=1, heures=1, tables=tables)
+    hors_session = moteur.releve_rendement(code, quantite=1, heures=1)
+    assert r["rendement_actuel"] == pytest.approx(
+        2 * hors_session["rendement_actuel"], abs=1e-4)
+
+
+# ── 20. Reprendre un devis enregistré ──────────────────────────────────────
 # Le fichier relu ici a pu être édité à la main ou produit par une version
 # antérieure de la bibliothèque. Ces tests vérifient surtout qu'une donnée
 # douteuse est ÉCARTÉE ET SIGNALÉE, jamais devinée ni laissée passer.
