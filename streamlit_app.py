@@ -74,6 +74,7 @@ from chiffrage.moteur import (
     controle_coherence,
     devis,
     fiche_prix,
+    releve_rendement,
     tables_courantes,
 )
 from chiffrage.parametres import serialiser
@@ -1159,10 +1160,24 @@ with onglet_biblio:
         if actuelle.get("note"):
             st.caption(f"🛈 {actuelle['note']}")
 
+        # Un widget à clé garde SA valeur d'une réexécution à l'autre, et
+        # `value=` n'est lu qu'à la première : changer de ressource laissait
+        # le prix de la PRÉCÉDENTE dans la case. Choisir MO.04 (45 €) après
+        # MO.01 (59 €) puis « Appliquer » sans rien taper écrivait 59 € sur
+        # MO.04 — un prix faux, en un geste, sans rien à l'écran pour le
+        # dire. La valeur se pose donc dans l'état AVANT le widget, et le
+        # repère porte aussi le prix enregistré : ainsi un retour aux
+        # valeurs d'origine remet la case d'aplomb, alors qu'une saisie en
+        # cours, elle, survit jusqu'à « Appliquer ».
+        repere = (choix, actuelle["pu_res"])
+        if st.session_state.get("corr_res_repere") != repere:
+            st.session_state.corr_res_repere = repere
+            st.session_state.corr_res_valeur = float(actuelle["pu_res"])
+
         col_val, col_btn = st.columns([2, 1])
         valeur = col_val.number_input(
             f"Nouveau prix ({origine_res[choix]['unite_res']})",
-            min_value=0.0, value=float(actuelle["pu_res"]), step=0.5,
+            min_value=0.0, step=0.5,
             format="%.2f", key="corr_res_valeur")
         col_btn.write("")
         if col_btn.button("Appliquer", width="stretch", key="corr_res_ok"):
@@ -1202,10 +1217,96 @@ with onglet_biblio:
         if ligne["code_ouv"] in a_valider:
             st.caption("⚠️ Rendement jamais confronté à un chantier réel.")
 
+        unite_ouv = origine_ouv[ligne["code_ouv"]]["unite_ouv"]
+
+        # ── Le calculer depuis un chantier ─────
+        # Sur un chantier, personne ne connaît un rendement : on connaît
+        # une quantité faite et des heures passées. Demander « heures par
+        # m2 » revient à faire faire la division de tête, sur place — ce
+        # que cet outil existe justement pour supprimer.
+        # Cette calculette REMPLACE le geste « saisir », elle ne supprime
+        # pas « appliquer » : le nombre se voit avant d'entrer dans la
+        # table, et un report malheureux n'a rien corrigé.
+        with st.expander("🔧 Le calculer depuis un chantier"):
+            qte_faite = st.number_input(
+                f"Quantité réalisée ({unite_ouv})",
+                min_value=0.0, value=0.0, step=1.0, format="%.2f",
+                key="releve_qte")
+            col_nb, col_h = st.columns(2)
+            nb = col_nb.number_input(
+                "Personnes", min_value=0, value=1, step=1, key="releve_nb")
+            duree = col_h.number_input(
+                "Heures chacun", min_value=0.0, value=0.0, step=0.5,
+                format="%.2f", key="releve_duree",
+                help="La DURÉE passée, pas le total : deux ouvriers "
+                      "pendant 3 h 30, c'est 3,5 ici — le total de 7 h "
+                      "est calculé.")
+            heures = nb * duree
+
+            if qte_faite > 0 and heures > 0:
+                try:
+                    releve = releve_rendement(
+                        ligne["code_ouv"], qte_faite, heures, tables=tables)
+                except ValueError as err:
+                    st.warning(str(err), icon="⚠️")
+                else:
+                    part = next(x for x in releve["lignes"]
+                                 if x["code_res"] == ligne["code_res"])
+                    st.markdown(
+                        f"**{heures:.2f} h** d'homme pour {qte_faite:g} "
+                        f"{unite_ouv} → **{releve['rendement_observe']:.3f} "
+                        f"h/{unite_ouv}** sur l'ouvrage entier "
+                        f"(bibliothèque : {releve['rendement_actuel']:.3f} — "
+                        f"{releve['ecart'] * 100:+.0f} %).")
+                    if len(releve["lignes"]) > 1:
+                        # Le relevé donne un total d'heures, pas un partage.
+                        # Le reprendre au prorata actuel est un choix par
+                        # défaut : il doit se lire, pas se subir.
+                        st.caption(
+                            "Deux lignes de main-d'œuvre ici : les heures "
+                            "relevées sont un total, réparties dans la "
+                            "**proportion actuelle** — "
+                            + " · ".join(
+                                f"{x['code_res']} {x['part'] * 100:.0f} %"
+                                for x in releve["lignes"])
+                            + " — faute de savoir qui a fait quoi.")
+                    # Arrondi à la précision du champ : sinon le bouton
+                    # annonce 0,583 et la table reçoit 0,5833 — deux
+                    # vérités sur un même chiffre, et celle qui compte
+                    # n'est pas celle qui s'affiche.
+                    propose = round(part["propose"], 3)
+                    if st.button(
+                        f"↑ Reporter {propose:.3f} h/{unite_ouv} "
+                        f"sur {part['code_res']}",
+                        key="releve_reporter", width="stretch",
+                    ):
+                        # Écrit AVANT que le champ ne soit instancié, plus
+                        # bas : c'est la seule façon de lui imposer une
+                        # valeur. Pas de `st.rerun()` — le champ sera rendu
+                        # avec cette valeur dans cette exécution-ci.
+                        st.session_state.corr_rend_valeur = propose
+            else:
+                st.caption(
+                    "Quantité réalisée et heures passées : le rendement "
+                    "est leur quotient. Rien ne se calcule tant que les "
+                    "deux ne sont pas remplis.")
+
+        # Un widget à clé garde SA valeur d'une réexécution à l'autre, et
+        # `value=` n'est lu qu'à la première : changer d'ouvrage laissait
+        # le rendement du PRÉCÉDENT dans la case, et « Appliquer » sans
+        # rien taper l'écrivait sur le nouveau. Même parade que pour les
+        # prix — la valeur se pose dans l'état avant le widget, et un
+        # report de la calculette ci-dessus n'est pas écrasé puisque le
+        # repère, lui, n'a pas bougé.
+        repere = (choix, ligne["qte_res"])
+        if st.session_state.get("corr_rend_repere") != repere:
+            st.session_state.corr_rend_repere = repere
+            st.session_state.corr_rend_valeur = float(ligne["qte_res"])
+
         col_val, col_btn = st.columns([2, 1])
         valeur = col_val.number_input(
-            f"Heures par {origine_ouv[ligne['code_ouv']]['unite_ouv']}",
-            min_value=0.0, value=float(ligne["qte_res"]), step=0.05,
+            f"Heures par {unite_ouv}",
+            min_value=0.0, step=0.05,
             format="%.3f", key="corr_rend_valeur")
         col_btn.write("")
         if col_btn.button("Appliquer", width="stretch", key="corr_rend_ok"):

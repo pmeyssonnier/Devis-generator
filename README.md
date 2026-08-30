@@ -337,7 +337,7 @@ exporter_devis(d, "devis_2026-042.xlsx",
 | Fichier | Rôle | Dépendance |
 |---|---|---|
 | `bibliotheque.py` | les données : RESSOURCES · OUVRAGES · COMPOSITION · MAPPING · PARAMS · METRES_HISTO | — |
-| `moteur.py` | calcul du bordereau, devis, fiche de prix, calibration, contrôle de cohérence | — |
+| `moteur.py` | calcul du bordereau, devis, fiche de prix, relevé de chantier, calibration, contrôle de cohérence | — |
 | `export_xlsx.py` | bibliothèque → Excel 6 onglets, **avec vraies formules** | openpyxl |
 | `devis_xlsx.py` | devis client prêt à envoyer : en-tête, postes par lot, TVA, conditions, signature | openpyxl |
 | `devis_json.py` | enregistrer un devis (saisie, pas prix) et le relire pour le modifier | — |
@@ -588,6 +588,22 @@ cellule, valider la saisie, en sortir : chaque geste rate une fois sur
 deux sur un téléphone, et une correction qui ne « prend » pas ne se
 voit pas.
 
+**Le rendement se calcule depuis le chantier.** Sur un chantier,
+personne ne connaît un rendement : on connaît une quantité faite et des
+heures passées. *« On a fait 12 m², à deux, de 8 h à 11 h 30 »* — soit
+**7 h d'homme**, pas 3 h 30. La calculette « 🔧 Le calculer depuis un
+chantier » prend ces trois nombres (quantité, personnes, durée), affiche
+le quotient et l'écart avec la bibliothèque, et le **reporte** dans le
+champ de saisie. Elle remplace le geste *saisir*, pas le geste
+*appliquer* : le nombre se voit avant d'entrer dans la table.
+
+Sept ouvrages sur 49 ont **deux lignes de main-d'œuvre** (un chef et un
+manœuvre, par exemple). Le relevé donne un total d'heures, pas un
+partage : il est réparti dans la **proportion actuelle**, et l'écran le
+dit. Faute de savoir qui a fait quoi, reprendre la proportion en place
+est le seul choix qui n'invente rien — mais c'en est un, et il doit se
+lire.
+
 **L'effet s'affiche en direct.** Corriger un taux recalcule les six
 devis historiques et montre l'écart avant/après, ligne par ligne.
 C'est l'écran de la séance de calibration : *« on relève le taux
@@ -811,7 +827,7 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-201 tests. Ceux de la chaîne Excel se skippent sans openpyxl, ceux de
+214 tests. Ceux de la chaîne Excel se skippent sans openpyxl, ceux de
 l'interface sans streamlit. L'écriture GitHub est testée avec un
 dépôt simulé — la suite ne touche jamais au réseau.
 

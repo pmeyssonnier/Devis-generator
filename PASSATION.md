@@ -5,7 +5,7 @@ autre assistant, autre développeur. Il donne le contexte, l'état réel, les
 décisions structurantes et — surtout — les pièges déjà payés. Le `README.md`
 documente l'outil ; celui-ci documente *le travail*.
 
-Dernière mise à jour : 30 août 2026 · 45 commits · 201 tests au vert.
+Dernière mise à jour : 30 août 2026 · 46 commits · 214 tests au vert.
 
 ---
 
@@ -139,7 +139,8 @@ Moteur en **Python pur** (aucune dépendance), interface et Excel au-dessus.
 
 1. **📥 Répondre à un métré** — dépôt du fichier, appariement, offre remplie
 2. **🧾 Devis client** — devis privé, TVA 6/21 %, export `.xlsx` + `.json`
-3. **📚 Bibliothèque** — recherche, fiche de justification, atelier de correction
+3. **📚 Bibliothèque** — recherche, fiche de justification, atelier de
+   correction (avec la calculette de rendement : quantité + heures → h/unité)
 4. **🔤 Lexique** — banc d'essai de l'appariement, ajout de termes
 5. **🎯 Calibration** — les 6 devis historiques et leurs écarts
 6. **⚙️ Paramètres** — entreprise et coefficients
@@ -219,7 +220,13 @@ l'écran avec celui du moteur.
   des écarts s'affichaient à −0,1 % au lieu de −11,5 %.
 - un widget à clé garde SA valeur d'une réexécution à l'autre. Remettre la
   valeur dans l'état **avant** d'instancier le widget, et ne pas passer
-  `value=` en plus d'une clé.
+  `value=` en plus d'une clé. Le prix à payer, mesuré : dans l'atelier,
+  choisir MO.04 (45 €) après MO.01 (59 €) laissait 59 € dans la case, et
+  « Appliquer » sans rien taper **écrivait 59 € sur MO.04** — un prix faux
+  en un geste, sans rien à l'écran pour le dire. Repère de remise à jour :
+  le couple (ce qui est choisi, sa valeur enregistrée), pour qu'un retour
+  aux valeurs d'origine remette la case d'aplomb sans effacer une saisie
+  en cours.
 - `st.secrets` **lève** s'il n'y a pas de fichier de secrets. Envelopper.
 - `st.data_editor` n'est **pas exposé par `AppTest`** : ses options ne se
   testent pas depuis l'app en marche, il faut attaquer les fonctions.
@@ -246,6 +253,12 @@ de suite. Parade en deux moitiés, les deux nécessaires :
 2. les lectures de la table optionnelle passent par un accès qui **ne peut pas
    lever**. Elle ne porte aucun prix : liste vide = repli honnête. **Ce
    raisonnement ne s'étend pas à une table de prix.**
+
+Même exposition pour une **fonction ajoutée à un module** : le script
+réexécuté fait `from chiffrage.moteur import ...` sur l'objet module déjà
+en mémoire, qui ne la connaît pas — `ImportError` en plein écran. Il n'y a
+pas de parade en code qui vaille : un repli silencieux ferait tourner
+l'app sur l'ancien comportement sans le dire.
 
 En cas d'écran rouge après un push : **Manage app → Reboot app**.
 
@@ -303,7 +316,7 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-**201 tests.** Excel se skippe sans openpyxl, l'interface sans streamlit.
+**214 tests.** Excel se skippe sans openpyxl, l'interface sans streamlit.
 L'écriture GitHub est testée avec un dépôt simulé : la suite ne touche jamais
 au réseau. L'interface est testée par `AppTest`, qui **exécute vraiment le
 script**. Trois tests portent sur le notebook Colab, dont un qui vérifie que
@@ -317,7 +330,15 @@ sinon la configuration client masque la cause des échecs.
 ## 10. Ce qui reste, par ordre d'importance
 
 1. **Séance de calibration avec le chef d'entreprise** — taux horaires et
-   rendements réels. Tout le reste en dépend.
+   rendements réels. Tout le reste en dépend. L'atelier sait maintenant
+   recevoir un relevé brut (quantité faite, personnes, durée) et non plus
+   seulement un rendement déjà calculé ; ce qui manque encore, c'est de
+   **garder le relevé** — aujourd'hui lever un ⚠️ n'enregistre ni la date,
+   ni le chantier, ni les heures. Une table `releves.json` est le pas
+   suivant, et elle bute sur une question qui n'est pas technique : le
+   statut devient calculable (0 relevé = jamais confronté), ce qui ferait
+   passer les ⚠️ de 13 à 49. Plus vrai, peut-être intenable
+   commercialement — au chef d'entreprise de trancher.
 2. Surfaces réelles des 6 chantiers historiques, puis viser < 15 % d'écart
    sur **chaque** ligne.
 3. Trancher l'hypothèse sur les devis 15 et 16.

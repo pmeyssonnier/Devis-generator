@@ -290,7 +290,89 @@ def fiche_prix(code_ouv, params=None, bordereau=None, tables=None):
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# 5. Calibration sur les devis historiques
+# 5. Relevé de chantier
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+def releve_rendement(code_ouv, quantite, heures, tables=None):
+    """
+    Convertit un relevé de chantier en rendement.
+
+    Sur un chantier, PERSONNE ne connaît un rendement. Ce qu'on y sait le
+    soir, c'est « on a fait 12 m2, à deux, de 8 h à 11 h 30 ». Le rendement
+    en est le quotient — heures / quantité — et le calculer de tête, sur
+    place, est exactement ce que cet outil existe pour supprimer.
+
+    `heures` est le total des heures d'HOMME, pas la durée : deux ouvriers
+    pendant 3 h 30 font 7 h. La confusion diviserait le rendement par le
+    nombre d'ouvriers, sans que rien ne le signale.
+
+    Répartition entre plusieurs lignes de main-d'œuvre — 7 ouvrages sur 49
+    en ont deux, un chef et un ouvrier par exemple : le relevé donne un
+    total, pas un partage. On garde donc la PROPORTION actuelle, faute de
+    mieux, et l'appelant doit le dire à l'écran. Inventer un partage en
+    silence serait pire que de le reprendre tel quel.
+
+    Retourne un dict décrivant le relevé — il ne corrige rien : c'est
+    l'humain qui applique, ou pas. Voir `calcul_bordereau` pour l'effet.
+    """
+    t = tables_courantes(tables)
+    ouv = t["ouvrages_par_code"].get(code_ouv)
+    if ouv is None:
+        raise KeyError(f"Ouvrage inconnu : {code_ouv}")
+    if quantite <= 0:
+        raise ValueError(
+            "Quantité réalisée nulle ou négative : des heures sans quantité "
+            "ne disent rien d'un rendement.")
+    if heures <= 0:
+        raise ValueError(
+            "Heures relevées nulles ou négatives : un rendement nul rendrait "
+            "la main-d'œuvre gratuite.")
+
+    par_res = t["ressources_par_code"]
+    lignes_mo = [c for c in t["composition"]
+                  if c["code_ouv"] == code_ouv
+                  and par_res[c["code_res"]]["type_res"] == "MO"]
+    if not lignes_mo:
+        raise ValueError(
+            f"Ouvrage {code_ouv} : aucune ligne de main-d'œuvre — un relevé "
+            f"d'heures n'y a rien à corriger.")
+
+    actuel = sum(c["qte_res"] for c in lignes_mo)
+    if actuel <= 0 and len(lignes_mo) > 1:
+        # Impossible via le chargeur, qui refuse une quantité <= 0 ; possible
+        # dans une table en cours de correction. Aucune proportion ne se
+        # déduit de zéro : on refuse plutôt que de partager au hasard.
+        raise ValueError(
+            f"Ouvrage {code_ouv} : rendement actuel nul sur plusieurs lignes "
+            f"de main-d'œuvre — les heures relevées ne peuvent pas être "
+            f"réparties.")
+
+    observe = heures / quantite
+    return {
+        "code_ouv": code_ouv,
+        "unite_ouv": ouv["unite_ouv"],
+        "quantite": quantite,
+        "heures": heures,
+        "rendement_observe": round(observe, 4),
+        "rendement_actuel": round(actuel, 4),
+        "ecart": round((observe - actuel) / actuel, 4) if actuel else None,
+        "lignes": [
+            {
+                "code_res": c["code_res"],
+                "libelle_res": par_res[c["code_res"]]["libelle_res"],
+                "qte_res": c["qte_res"],
+                "part": round(c["qte_res"] / actuel, 4) if actuel else 1.0,
+                "propose": round(
+                    observe * (c["qte_res"] / actuel if actuel else 1.0), 4),
+            }
+            for c in lignes_mo
+        ],
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 6. Calibration sur les devis historiques
 # ═══════════════════════════════════════════════════════════════════════════
 
 
@@ -361,7 +443,7 @@ def imprimer_calibration(cal=None, params=None, tables=None):
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# 6. Contrôle de cohérence de la bibliothèque
+# 7. Contrôle de cohérence de la bibliothèque
 # ═══════════════════════════════════════════════════════════════════════════
 
 
