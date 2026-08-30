@@ -325,3 +325,35 @@ def test_l_atelier_montre_l_effet_d_une_correction(AppTest):
     # Sans jeton GitHub, la table corrigée doit rester téléchargeable.
     assert any("ressources.json" in d.label
                 for d in at.get("download_button"))
+
+
+def test_reprendre_une_correspondance_ne_boucle_pas(app, tmp_path):
+    """UNE BOUCLE DE RERUN À NE PAS RÉINTRODUIRE.
+
+    Le fichier déposé reste présent à CHAQUE réexécution du script :
+    un `st.rerun()` inconditionnel après lecture relance le script sans
+    fin. L'app ne répond plus, et recharger la page n'y change rien
+    puisque le fichier est toujours là — il faut redémarrer le serveur.
+    """
+    import json
+
+    from chiffrage.bibliotheque import MAPPING
+    from chiffrage.gen_metre import generer_metre
+
+    metre = tmp_path / "M.xlsx"
+    generer_metre(str(metre))
+    app.file_uploader[0].set_value((metre.name, metre.read_bytes(),
+                                     XLSX)).run()
+
+    depot = [u for u in app.file_uploader if u.key == "up_map"]
+    assert depot, "déposeur de correspondance absent"
+    carte = json.dumps(dict(list(MAPPING.items())[:5])).encode()
+    depot[0].set_value(("MAPPING.json", carte, "application/json")).run()
+    assert not app.exception, [e.value for e in app.exception]
+
+    # Le fichier est toujours déposé : les réexécutions suivantes ne
+    # doivent plus rien relancer.
+    assert app.session_state["mapping_importe"]
+    for _ in range(3):
+        app.run()
+        assert not app.exception, [e.value for e in app.exception]

@@ -688,7 +688,18 @@ def _repondre_a_un_metre(params):
             )
             repris = st.file_uploader("Reprendre une correspondance (.json)",
                                         type=["json"], key="up_map")
-            if repris is not None:
+            # BOUCLE DE RERUN À NE PAS RÉINTRODUIRE.
+            # `repris` reste non-None à CHAQUE réexécution du script tant
+            # que le fichier est déposé : un st.rerun() inconditionnel
+            # ici relance le script sans fin. L'app ne répond plus, et
+            # recharger la page n'y change rien puisque le fichier est
+            # toujours là — il faut redémarrer le serveur.
+            # On ne traite donc le dépôt QU'UNE FOIS, repéré par
+            # l'empreinte de son contenu.
+            depot_deja_lu = st.session_state.get("mapping_importe")
+            empreinte = (hashlib.sha256(repris.getvalue()).hexdigest()
+                          if repris is not None else None)
+            if repris is not None and empreinte != depot_deja_lu:
                 try:
                     charge = json.loads(repris.getvalue().decode("utf-8"))
                     inconnus = set(charge.values()) - set(b) - {None}
@@ -702,8 +713,12 @@ def _repondre_a_un_metre(params):
                         poste: ouv for poste, ouv in charge.items()
                         if ouv in b or ouv is None
                     }
+                    st.session_state.mapping_importe = empreinte
                     st.rerun()
                 except Exception as err:
+                    # Marqué lu malgré l'échec : sans ça, un fichier
+                    # illisible reposerait la question à chaque rerun.
+                    st.session_state.mapping_importe = empreinte
                     st.error(f"Fichier illisible : {err}", icon="🛑")
 
 
@@ -1162,6 +1177,10 @@ with onglet_lexique:
             )
             st.rerun()
 
+    message_commit = st.session_state.pop("lexique_commit_texte", None)
+    if message_commit:
+        st.success(message_commit, icon="✅")
+
     # ── Ce qui a été ajouté à chaud ────────────────
     ajouts = dict(SURCOUCHE["expressions"], **SURCOUCHE["synonymes"])
     if ajouts:
@@ -1211,11 +1230,11 @@ with onglet_lexique:
                         st.session_state.lexique_version = (
                             st.session_state.get("lexique_version", 0) + 1
                         )
-                        st.success(
+                        # Le message doit survivre au rerun qui suit,
+                        # sinon personne ne le voit jamais.
+                        st.session_state.lexique_commit_texte = (
                             f"Commité. [Voir le commit]({url}) — l'app se "
-                            f"redéploie dans une à deux minutes.",
-                            icon="✅",
-                        )
+                            f"redéploie dans une à deux minutes.")
                         st.rerun()
         else:
             st.caption(
