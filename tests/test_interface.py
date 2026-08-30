@@ -393,9 +393,21 @@ def test_corriger_une_valeur_en_trois_gestes(app):
     assert not app.exception, [e.value for e in app.exception]
 
     assert {m.label: m.value for m in app.metric}["Valeurs corrigées"] == "1"
-    # L'atelier recalcule ; l'onglet Calibration garde les valeurs du dépôt.
+
+    # L'atelier recalcule ; l'onglet Calibration garde les valeurs du
+    # dépôt. On compare les DEUX ENTRE ELLES, jamais à un littéral :
+    # ces chiffres bougent à chaque taux que le chef d'entreprise
+    # calibre depuis l'app, et un test qui les fige rendrait la CI
+    # rouge sans qu'une ligne de code ait changé — le meilleur moyen
+    # de la faire ignorer. La leçon avait déjà été apprise sur le
+    # lexique appris.
     ecarts = [m.value for m in app.metric if m.label == "Écart moyen absolu"]
-    assert ecarts[0] == "16.2 %" and ecarts[1] == "15.2 %"
+    assert len(ecarts) == 2
+    atelier, depot = (float(e.rstrip(" %")) for e in ecarts)
+    assert atelier != depot
+    # Relever le taux du façadier renchérit l'ouvrage : les devis
+    # calculés montent, donc l'écart aux forfaits vendus aussi.
+    assert atelier > depot
 
 
 def test_le_bouton_d_enregistrement_n_apparait_qu_apres_correction(app):
