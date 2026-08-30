@@ -269,6 +269,7 @@ exporter_devis(d, "devis_2026-042.xlsx",
 | `suggestion.py` | appariement poste imposé → ouvrage, à partir du libellé | — |
 | `lexique.py` | vocabulaire de CSC → vocabulaire de la bibliothèque, facette d'opération | — |
 | `parametres.py` | identité de l'entreprise et coefficients de vente, réglables depuis l'app | — |
+| `data/*.json` | les tables elles-mêmes : ressources, ouvrages, composition, lots, mapping | — |
 | `detection_colonnes.py` | quelle colonne est le code, la quantité, le prix | — |
 | `depot_github.py` | écrit le lexique appris dans le dépôt (API GitHub, urllib) | — |
 | `controle_prix.py` | relit une offre avant dépôt : couverture, rabais maximal, alertes | — |
@@ -285,8 +286,9 @@ une cellule Colab.
 ```
 .
 ├── chiffrage/                → le paquet, appelable par `python -m chiffrage`
-│   ├── bibliotheque.py       → RESSOURCES · OUVRAGES · COMPOSITION · MAPPING ·
-│   │                            PARAMS · METRES_HISTO            (Python pur)
+│   ├── data/*.json           → LES DONNÉES : ressources, ouvrages,
+│   │                            composition, lots, mapping, historique
+│   ├── bibliotheque.py       → chargement et CONTRÔLE des tables  (Python pur)
 │   ├── moteur.py             → bordereau · devis · fiche de prix ·
 │   │                            calibration · contrôle de cohérence (Python pur)
 │   ├── gen_metre.py          → métré de marché public fictif       (openpyxl)
@@ -404,6 +406,45 @@ postes restés vides ; cette liste doit être à **zéro** avant envoi.
 
 **TVA.** 6 % uniquement si logement de plus de dix ans, usage principalement
 privé, facturation au consommateur final. **En marché public : 21 %.**
+
+---
+
+## Les données ne sont pas du code
+
+Les tables vivent dans **`chiffrage/data/*.json`** : ressources,
+ouvrages, composition, lots, mapping, devis historiques. Ce sont des
+valeurs d'entreprise — prix d'achat, taux horaires, **rendements** —
+que le chef d'entreprise est seul à connaître.
+
+C'était le principal obstacle pratique à la calibration : les bons
+chiffres finissaient dans un classeur Excel, et il fallait les recopier
+à la main dans le Python. Du JSON se relit dans un diff GitHub, se
+corrige sans éditeur de code, et ne s'exécute pas.
+
+**Les commentaires qui portaient le raisonnement sont devenus des
+données.** Un JSON est muet ; le *pourquoi* d'un chiffre serait mort
+avec les commentaires Python. Il vit maintenant dans un champ `note` :
+
+```json
+{ "code_ouv": "40.40", "code_res": "MA.10", "qte_res": 2.2,
+  "note": "2,2 m2 de membrane par m2 posé : bicouche,
+           recouvrements et relevés compris." }
+```
+
+**Les tables sont contrôlées au chargement, pas au premier chiffrage.**
+Éditable à la main veut dire corrompable à la main, et chacune de ces
+fautes produirait un prix faux sans se voir dans un fichier de
+150 lignes : une ressource orpheline vaut zéro, un ouvrage sans
+composition se vend gratuitement, un type de ressource inconnu échappe
+aux trois déboursés. Sept familles d'incohérence sont refusées, avec un
+message qui nomme la faute.
+
+**Et il n'y a pas de valeurs de repli**, à la différence du lexique ou
+des paramètres : une bibliothèque vide ne dégraderait pas le résultat,
+elle rendrait « aucun ouvrage » pour tous les postes — une offre
+entièrement vide, présentée comme normale. L'outil refuse de démarrer.
+
+`CHIFFRAGE_DATA` permet de charger d'autres tables que celles du dépôt.
 
 ---
 
@@ -570,7 +611,7 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-136 tests. Ceux de la chaîne Excel se skippent sans openpyxl, ceux de
+145 tests. Ceux de la chaîne Excel se skippent sans openpyxl, ceux de
 l'interface sans streamlit. L'écriture GitHub est testée avec un
 dépôt simulé — la suite ne touche jamais au réseau.
 

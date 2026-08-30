@@ -1,0 +1,296 @@
+[
+  {
+    "code_ouv": "10.10",
+    "libelle_ouv": "Installation et repli de chantier, amenée du matériel",
+    "unite_ouv": "FF",
+    "code_ref": ""
+  },
+  {
+    "code_ouv": "10.20",
+    "libelle_ouv": "Échafaudage de façade, montage, location 4 sem., démontage",
+    "unite_ouv": "m2",
+    "code_ref": ""
+  },
+  {
+    "code_ouv": "10.30",
+    "libelle_ouv": "Protection des ouvrages conservés, bâches et films",
+    "unite_ouv": "m2",
+    "code_ref": ""
+  },
+  {
+    "code_ouv": "10.40",
+    "libelle_ouv": "Signalisation, clôture et sécurisation des accès",
+    "unite_ouv": "FF",
+    "code_ref": ""
+  },
+  {
+    "code_ouv": "10.50",
+    "libelle_ouv": "Dossier as-built, PV de réception, garanties",
+    "unite_ouv": "FF",
+    "code_ref": ""
+  },
+  {
+    "code_ouv": "20.10",
+    "libelle_ouv": "Piquage d'enduit dégradé sur maçonnerie",
+    "unite_ouv": "m2",
+    "code_ref": ""
+  },
+  {
+    "code_ouv": "20.20",
+    "libelle_ouv": "Démolition de cloison légère, évacuation comprise",
+    "unite_ouv": "m2",
+    "code_ref": ""
+  },
+  {
+    "code_ouv": "20.30",
+    "libelle_ouv": "Dépose de plafond existant (plâtre ou plaques)",
+    "unite_ouv": "m2",
+    "code_ref": ""
+  },
+  {
+    "code_ouv": "20.40",
+    "libelle_ouv": "Dépose de menuiserie extérieure, calfeutrement provisoire",
+    "unite_ouv": "pce",
+    "code_ref": ""
+  },
+  {
+    "code_ouv": "20.50",
+    "libelle_ouv": "Évacuation des déchets en conteneur, tri compris",
+    "unite_ouv": "m3",
+    "code_ref": ""
+  },
+  {
+    "code_ouv": "20.60",
+    "libelle_ouv": "Dépose de revêtement de sol et de chape existante",
+    "unite_ouv": "m2",
+    "code_ref": ""
+  },
+  {
+    "code_ouv": "20.70",
+    "libelle_ouv": "Dépose d'appareils sanitaires et de tuyauterie",
+    "unite_ouv": "pce",
+    "code_ref": ""
+  },
+  {
+    "code_ouv": "30.10",
+    "libelle_ouv": "Maçonnerie de briques en rebouchage de baie ou trémie",
+    "unite_ouv": "m2",
+    "code_ref": ""
+  },
+  {
+    "code_ouv": "30.20",
+    "libelle_ouv": "Pose de linteau préfabriqué, étançonnement compris",
+    "unite_ouv": "m",
+    "code_ref": ""
+  },
+  {
+    "code_ouv": "30.30",
+    "libelle_ouv": "Réparation de béton dégradé, passivation des aciers",
+    "unite_ouv": "m2",
+    "code_ref": ""
+  },
+  {
+    "code_ouv": "30.40",
+    "libelle_ouv": "Cimentage hydrofuge de soubassement",
+    "unite_ouv": "m2",
+    "code_ref": ""
+  },
+  {
+    "code_ouv": "30.50",
+    "libelle_ouv": "Seuil en pierre bleue, pose et scellement",
+    "unite_ouv": "m",
+    "code_ref": ""
+  },
+  {
+    "code_ouv": "30.60",
+    "libelle_ouv": "Rejointoiement de maçonnerie au mortier de chaux",
+    "unite_ouv": "m2",
+    "code_ref": ""
+  },
+  {
+    "code_ouv": "40.10",
+    "libelle_ouv": "Nettoyage haute pression de façade",
+    "unite_ouv": "m2",
+    "code_ref": ""
+  },
+  {
+    "code_ouv": "40.20",
+    "libelle_ouv": "Enduit de façade minéral armé, deux couches",
+    "unite_ouv": "m2",
+    "code_ref": ""
+  },
+  {
+    "code_ouv": "40.30",
+    "libelle_ouv": "Peinture de façade siloxane, primaire compris",
+    "unite_ouv": "m2",
+    "code_ref": ""
+  },
+  {
+    "code_ouv": "40.40",
+    "libelle_ouv": "Étanchéité bitumineuse bicouche sur support préparé",
+    "unite_ouv": "m2",
+    "code_ref": ""
+  },
+  {
+    "code_ouv": "40.50",
+    "libelle_ouv": "Étanchéité EPDM collée, relevés compris",
+    "unite_ouv": "m2",
+    "code_ref": ""
+  },
+  {
+    "code_ouv": "40.60",
+    "libelle_ouv": "Solin, relevé et couvre-mur, zinguerie comprise",
+    "unite_ouv": "m",
+    "code_ref": ""
+  },
+  {
+    "code_ouv": "50.10",
+    "libelle_ouv": "Isolation PIR 80 mm sous plafond, fixation mécanique",
+    "unite_ouv": "m2",
+    "code_ref": ""
+  },
+  {
+    "code_ouv": "50.20",
+    "libelle_ouv": "Isolation laine minérale 100 mm entre ossature",
+    "unite_ouv": "m2",
+    "code_ref": ""
+  },
+  {
+    "code_ouv": "50.30",
+    "libelle_ouv": "Pare-vapeur et adhésifs d'étanchéité à l'air",
+    "unite_ouv": "m2",
+    "code_ref": ""
+  },
+  {
+    "code_ouv": "60.10",
+    "libelle_ouv": "Plafonnage sur maçonnerie, deux couches, dressé et lissé",
+    "unite_ouv": "m2",
+    "code_ref": ""
+  },
+  {
+    "code_ouv": "60.20",
+    "libelle_ouv": "Faux plafond BA13 sur ossature métallique, jointoyé",
+    "unite_ouv": "m2",
+    "code_ref": ""
+  },
+  {
+    "code_ouv": "60.30",
+    "libelle_ouv": "Rebouchage et enduit de rattrapage sur linteaux",
+    "unite_ouv": "m",
+    "code_ref": ""
+  },
+  {
+    "code_ouv": "60.40",
+    "libelle_ouv": "Cornières et profilés de finition",
+    "unite_ouv": "m",
+    "code_ref": ""
+  },
+  {
+    "code_ouv": "70.10",
+    "libelle_ouv": "Peinture murs intérieurs, deux couches",
+    "unite_ouv": "m2",
+    "code_ref": ""
+  },
+  {
+    "code_ouv": "70.20",
+    "libelle_ouv": "Peinture plafonds intérieurs, deux couches",
+    "unite_ouv": "m2",
+    "code_ref": ""
+  },
+  {
+    "code_ouv": "70.30",
+    "libelle_ouv": "Enduit de lissage sur murs avant peinture",
+    "unite_ouv": "m2",
+    "code_ref": ""
+  },
+  {
+    "code_ouv": "70.40",
+    "libelle_ouv": "Carrelage de sol grès cérame, colle et joints compris",
+    "unite_ouv": "m2",
+    "code_ref": ""
+  },
+  {
+    "code_ouv": "70.50",
+    "libelle_ouv": "Chape de ravoirage armée 6 cm",
+    "unite_ouv": "m2",
+    "code_ref": ""
+  },
+  {
+    "code_ouv": "70.60",
+    "libelle_ouv": "Faïence murale, profils de finition compris",
+    "unite_ouv": "m2",
+    "code_ref": ""
+  },
+  {
+    "code_ouv": "70.70",
+    "libelle_ouv": "Peinture sur menuiseries bois, ponçage compris",
+    "unite_ouv": "m2",
+    "code_ref": ""
+  },
+  {
+    "code_ouv": "80.10",
+    "libelle_ouv": "Châssis PVC double vitrage, pose et finitions",
+    "unite_ouv": "m2",
+    "code_ref": ""
+  },
+  {
+    "code_ouv": "80.20",
+    "libelle_ouv": "Porte d'entrée bois massif, quincaillerie comprise",
+    "unite_ouv": "pce",
+    "code_ref": ""
+  },
+  {
+    "code_ouv": "80.30",
+    "libelle_ouv": "Garde-corps acier thermolaqué, scellé",
+    "unite_ouv": "m",
+    "code_ref": ""
+  },
+  {
+    "code_ouv": "80.40",
+    "libelle_ouv": "Évacuation PVC Ø 110, pose et raccordement",
+    "unite_ouv": "m",
+    "code_ref": ""
+  },
+  {
+    "code_ouv": "80.50",
+    "libelle_ouv": "Alimentation multicouche Ø 16, pose et essais",
+    "unite_ouv": "m",
+    "code_ref": ""
+  },
+  {
+    "code_ouv": "80.60",
+    "libelle_ouv": "Étanchéité liquide sous carrelage de salle de bain",
+    "unite_ouv": "m2",
+    "code_ref": ""
+  },
+  {
+    "code_ouv": "80.70",
+    "libelle_ouv": "WC suspendu complet, bâti-support inclus",
+    "unite_ouv": "pce",
+    "code_ref": ""
+  },
+  {
+    "code_ouv": "80.80",
+    "libelle_ouv": "Essais d'étanchéité, rinçage et mise en service",
+    "unite_ouv": "FF",
+    "code_ref": ""
+  },
+  {
+    "code_ouv": "90.10",
+    "libelle_ouv": "Prise de courant 2P+T encastrée",
+    "unite_ouv": "pce",
+    "code_ref": ""
+  },
+  {
+    "code_ouv": "90.20",
+    "libelle_ouv": "Mise à la terre et liaisons équipotentielles RGIE",
+    "unite_ouv": "FF",
+    "code_ref": ""
+  },
+  {
+    "code_ouv": "90.30",
+    "libelle_ouv": "Contrôle de conformité par organisme agréé",
+    "unite_ouv": "FF",
+    "code_ref": ""
+  }
+]

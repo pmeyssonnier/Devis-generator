@@ -1,0 +1,354 @@
+[
+  {
+    "code_res": "MO.01",
+    "libelle_res": "Chef de chantier",
+    "type_res": "MO",
+    "unite_res": "h",
+    "pu_res": 58.0,
+    "note": "Coût entreprise COMPLET : salaire + ONSS patronale + pécule + jours fériés + assurance loi + déplacements + EPI. Surtout pas le brut."
+  },
+  {
+    "code_res": "MO.02",
+    "libelle_res": "Ouvrier qualifié maçon / façadier",
+    "type_res": "MO",
+    "unite_res": "h",
+    "pu_res": 48.0,
+    "note": "Coût entreprise COMPLET : salaire + ONSS patronale + pécule + jours fériés + assurance loi + déplacements + EPI. Surtout pas le brut."
+  },
+  {
+    "code_res": "MO.03",
+    "libelle_res": "Ouvrier qualifié plafonneur",
+    "type_res": "MO",
+    "unite_res": "h",
+    "pu_res": 48.0,
+    "note": "Coût entreprise COMPLET : salaire + ONSS patronale + pécule + jours fériés + assurance loi + déplacements + EPI. Surtout pas le brut."
+  },
+  {
+    "code_res": "MO.04",
+    "libelle_res": "Ouvrier qualifié peintre",
+    "type_res": "MO",
+    "unite_res": "h",
+    "pu_res": 45.0,
+    "note": "Coût entreprise COMPLET : salaire + ONSS patronale + pécule + jours fériés + assurance loi + déplacements + EPI. Surtout pas le brut."
+  },
+  {
+    "code_res": "MO.05",
+    "libelle_res": "Ouvrier qualifié menuisier",
+    "type_res": "MO",
+    "unite_res": "h",
+    "pu_res": 50.0,
+    "note": "Coût entreprise COMPLET : salaire + ONSS patronale + pécule + jours fériés + assurance loi + déplacements + EPI. Surtout pas le brut."
+  },
+  {
+    "code_res": "MO.06",
+    "libelle_res": "Ouvrier qualifié sanitaire",
+    "type_res": "MO",
+    "unite_res": "h",
+    "pu_res": 52.0,
+    "note": "Coût entreprise COMPLET : salaire + ONSS patronale + pécule + jours fériés + assurance loi + déplacements + EPI. Surtout pas le brut."
+  },
+  {
+    "code_res": "MO.07",
+    "libelle_res": "Manœuvre",
+    "type_res": "MO",
+    "unite_res": "h",
+    "pu_res": 38.0,
+    "note": "Coût entreprise COMPLET : salaire + ONSS patronale + pécule + jours fériés + assurance loi + déplacements + EPI. Surtout pas le brut."
+  },
+  {
+    "code_res": "MO.08",
+    "libelle_res": "Étancheur",
+    "type_res": "MO",
+    "unite_res": "h",
+    "pu_res": 52.0,
+    "note": "Coût entreprise COMPLET : salaire + ONSS patronale + pécule + jours fériés + assurance loi + déplacements + EPI. Surtout pas le brut."
+  },
+  {
+    "code_res": "MO.09",
+    "libelle_res": "Ouvrier qualifié électricien",
+    "type_res": "MO",
+    "unite_res": "h",
+    "pu_res": 52.0,
+    "note": "Coût entreprise COMPLET : salaire + ONSS patronale + pécule + jours fériés + assurance loi + déplacements + EPI. Surtout pas le brut."
+  },
+  {
+    "code_res": "MA.01",
+    "libelle_res": "Ciment gris CEM II 32,5 — sac 25 kg",
+    "type_res": "MAT",
+    "unite_res": "sac",
+    "pu_res": 7.2
+  },
+  {
+    "code_res": "MA.02",
+    "libelle_res": "Sable de rivière 0/2",
+    "type_res": "MAT",
+    "unite_res": "m3",
+    "pu_res": 48.0
+  },
+  {
+    "code_res": "MA.03",
+    "libelle_res": "Chaux hydraulique NHL 3,5 — sac 25 kg",
+    "type_res": "MAT",
+    "unite_res": "sac",
+    "pu_res": 14.5
+  },
+  {
+    "code_res": "MA.04",
+    "libelle_res": "Mortier de réparation fibré — sac 25 kg",
+    "type_res": "MAT",
+    "unite_res": "sac",
+    "pu_res": 22.0
+  },
+  {
+    "code_res": "MA.05",
+    "libelle_res": "Enduit de plafonnage plâtre — sac 25 kg",
+    "type_res": "MAT",
+    "unite_res": "sac",
+    "pu_res": 9.8
+  },
+  {
+    "code_res": "MA.06",
+    "libelle_res": "Enduit de façade minéral — sac 25 kg",
+    "type_res": "MAT",
+    "unite_res": "sac",
+    "pu_res": 18.5
+  },
+  {
+    "code_res": "MA.07",
+    "libelle_res": "Primaire d'accrochage",
+    "type_res": "MAT",
+    "unite_res": "L",
+    "pu_res": 6.4
+  },
+  {
+    "code_res": "MA.08",
+    "libelle_res": "Peinture de façade siloxane",
+    "type_res": "MAT",
+    "unite_res": "L",
+    "pu_res": 9.6
+  },
+  {
+    "code_res": "MA.09",
+    "libelle_res": "Peinture intérieure mate murs/plafonds",
+    "type_res": "MAT",
+    "unite_res": "L",
+    "pu_res": 5.8
+  },
+  {
+    "code_res": "MA.10",
+    "libelle_res": "Membrane bitumineuse APP 4 mm",
+    "type_res": "MAT",
+    "unite_res": "m2",
+    "pu_res": 12.5
+  },
+  {
+    "code_res": "MA.11",
+    "libelle_res": "Membrane EPDM 1,2 mm",
+    "type_res": "MAT",
+    "unite_res": "m2",
+    "pu_res": 16.8
+  },
+  {
+    "code_res": "MA.12",
+    "libelle_res": "Isolant PIR 80 mm",
+    "type_res": "MAT",
+    "unite_res": "m2",
+    "pu_res": 21.5
+  },
+  {
+    "code_res": "MA.13",
+    "libelle_res": "Laine minérale 100 mm",
+    "type_res": "MAT",
+    "unite_res": "m2",
+    "pu_res": 9.4
+  },
+  {
+    "code_res": "MA.14",
+    "libelle_res": "Panneau de plâtre BA13",
+    "type_res": "MAT",
+    "unite_res": "m2",
+    "pu_res": 6.2
+  },
+  {
+    "code_res": "MA.15",
+    "libelle_res": "Ossature métallique, suspentes, vis",
+    "type_res": "MAT",
+    "unite_res": "m2",
+    "pu_res": 7.5
+  },
+  {
+    "code_res": "MA.16",
+    "libelle_res": "Profilé d'angle / cornière de finition",
+    "type_res": "MAT",
+    "unite_res": "m",
+    "pu_res": 2.1
+  },
+  {
+    "code_res": "MA.17",
+    "libelle_res": "Linteau béton précontraint",
+    "type_res": "MAT",
+    "unite_res": "m",
+    "pu_res": 34.0
+  },
+  {
+    "code_res": "MA.18",
+    "libelle_res": "Châssis PVC double vitrage",
+    "type_res": "MAT",
+    "unite_res": "m2",
+    "pu_res": 320.0
+  },
+  {
+    "code_res": "MA.19",
+    "libelle_res": "Seuil en pierre bleue",
+    "type_res": "MAT",
+    "unite_res": "m",
+    "pu_res": 145.0
+  },
+  {
+    "code_res": "MA.20",
+    "libelle_res": "Porte d'entrée bois massif",
+    "type_res": "MAT",
+    "unite_res": "pce",
+    "pu_res": 1250.0
+  },
+  {
+    "code_res": "MA.21",
+    "libelle_res": "Quincaillerie, fixations, consommables",
+    "type_res": "MAT",
+    "unite_res": "FF",
+    "pu_res": 45.0
+  },
+  {
+    "code_res": "MA.22",
+    "libelle_res": "Carrelage grès cérame",
+    "type_res": "MAT",
+    "unite_res": "m2",
+    "pu_res": 32.0
+  },
+  {
+    "code_res": "MA.23",
+    "libelle_res": "Colle à carrelage — sac 25 kg",
+    "type_res": "MAT",
+    "unite_res": "sac",
+    "pu_res": 13.5
+  },
+  {
+    "code_res": "MA.24",
+    "libelle_res": "Étanchéité liquide sous carrelage",
+    "type_res": "MAT",
+    "unite_res": "m2",
+    "pu_res": 11.0
+  },
+  {
+    "code_res": "MA.25",
+    "libelle_res": "Garde-corps acier thermolaqué",
+    "type_res": "MAT",
+    "unite_res": "m",
+    "pu_res": 185.0
+  },
+  {
+    "code_res": "MA.26",
+    "libelle_res": "Tuyau d'évacuation PVC Ø 110",
+    "type_res": "MAT",
+    "unite_res": "m",
+    "pu_res": 12.8
+  },
+  {
+    "code_res": "MA.27",
+    "libelle_res": "Tuyau multicouche Ø 16 + raccords",
+    "type_res": "MAT",
+    "unite_res": "m",
+    "pu_res": 6.5
+  },
+  {
+    "code_res": "MA.28",
+    "libelle_res": "Treillis d'armature pour chape",
+    "type_res": "MAT",
+    "unite_res": "m2",
+    "pu_res": 3.2
+  },
+  {
+    "code_res": "MA.29",
+    "libelle_res": "Faïence murale",
+    "type_res": "MAT",
+    "unite_res": "m2",
+    "pu_res": 28.0
+  },
+  {
+    "code_res": "MA.30",
+    "libelle_res": "WC suspendu + bâti-support + plaque",
+    "type_res": "MAT",
+    "unite_res": "pce",
+    "pu_res": 420.0
+  },
+  {
+    "code_res": "MA.31",
+    "libelle_res": "Appareillage électrique encastré",
+    "type_res": "MAT",
+    "unite_res": "pce",
+    "pu_res": 8.5
+  },
+  {
+    "code_res": "MA.32",
+    "libelle_res": "Câble XVB 3G2,5",
+    "type_res": "MAT",
+    "unite_res": "m",
+    "pu_res": 2.3
+  },
+  {
+    "code_res": "MA.33",
+    "libelle_res": "Prise de terre : piquet, barrette, fils",
+    "type_res": "MAT",
+    "unite_res": "pce",
+    "pu_res": 145.0
+  },
+  {
+    "code_res": "MA.34",
+    "libelle_res": "Laque pour menuiserie bois",
+    "type_res": "MAT",
+    "unite_res": "L",
+    "pu_res": 14.2
+  },
+  {
+    "code_res": "MA.35",
+    "libelle_res": "Contrôle RGIE par organisme agréé",
+    "type_res": "MAT",
+    "unite_res": "pce",
+    "pu_res": 195.0
+  },
+  {
+    "code_res": "EQ.01",
+    "libelle_res": "Échafaudage de façade (location)",
+    "type_res": "EQP",
+    "unite_res": "m2.sem",
+    "pu_res": 4.5
+  },
+  {
+    "code_res": "EQ.02",
+    "libelle_res": "Nacelle élévatrice (location)",
+    "type_res": "EQP",
+    "unite_res": "j",
+    "pu_res": 190.0
+  },
+  {
+    "code_res": "EQ.03",
+    "libelle_res": "Conteneur 10 m3 + évacuation en centre",
+    "type_res": "EQP",
+    "unite_res": "pce",
+    "pu_res": 380.0
+  },
+  {
+    "code_res": "EQ.04",
+    "libelle_res": "Petit matériel et consommables",
+    "type_res": "EQP",
+    "unite_res": "h",
+    "pu_res": 2.2
+  },
+  {
+    "code_res": "EQ.05",
+    "libelle_res": "Clôture de chantier et signalisation",
+    "type_res": "EQP",
+    "unite_res": "m.mois",
+    "pu_res": 3.8
+  }
+]

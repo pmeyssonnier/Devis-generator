@@ -1,0 +1,775 @@
+[
+  {
+    "code_ouv": "10.10",
+    "code_res": "MO.01",
+    "qte_res": 3.0,
+    "note": "Installation et repli. Le conteneur n'est PAS ici : il est facturé au m3 par 20.50, sinon double compte."
+  },
+  {
+    "code_ouv": "10.10",
+    "code_res": "MO.07",
+    "qte_res": 4.0
+  },
+  {
+    "code_ouv": "10.10",
+    "code_res": "MA.21",
+    "qte_res": 1.0
+  },
+  {
+    "code_ouv": "10.20",
+    "code_res": "MO.07",
+    "qte_res": 0.35
+  },
+  {
+    "code_ouv": "10.20",
+    "code_res": "EQ.01",
+    "qte_res": 4.0
+  },
+  {
+    "code_ouv": "10.30",
+    "code_res": "MO.07",
+    "qte_res": 0.08
+  },
+  {
+    "code_ouv": "10.30",
+    "code_res": "MA.21",
+    "qte_res": 0.02
+  },
+  {
+    "code_ouv": "10.40",
+    "code_res": "MO.07",
+    "qte_res": 4.0
+  },
+  {
+    "code_ouv": "10.40",
+    "code_res": "EQ.05",
+    "qte_res": 20.0
+  },
+  {
+    "code_ouv": "10.40",
+    "code_res": "MA.21",
+    "qte_res": 0.5
+  },
+  {
+    "code_ouv": "10.50",
+    "code_res": "MO.01",
+    "qte_res": 8.0
+  },
+  {
+    "code_ouv": "10.50",
+    "code_res": "MA.21",
+    "qte_res": 0.3
+  },
+  {
+    "code_ouv": "20.10",
+    "code_res": "MO.07",
+    "qte_res": 0.55
+  },
+  {
+    "code_ouv": "20.10",
+    "code_res": "EQ.04",
+    "qte_res": 0.55
+  },
+  {
+    "code_ouv": "20.10",
+    "code_res": "EQ.03",
+    "qte_res": 0.01
+  },
+  {
+    "code_ouv": "20.20",
+    "code_res": "MO.07",
+    "qte_res": 0.7
+  },
+  {
+    "code_ouv": "20.20",
+    "code_res": "EQ.04",
+    "qte_res": 0.7
+  },
+  {
+    "code_ouv": "20.20",
+    "code_res": "EQ.03",
+    "qte_res": 0.015
+  },
+  {
+    "code_ouv": "20.30",
+    "code_res": "MO.07",
+    "qte_res": 0.45
+  },
+  {
+    "code_ouv": "20.30",
+    "code_res": "EQ.04",
+    "qte_res": 0.45
+  },
+  {
+    "code_ouv": "20.30",
+    "code_res": "EQ.03",
+    "qte_res": 0.012
+  },
+  {
+    "code_ouv": "20.40",
+    "code_res": "MO.05",
+    "qte_res": 1.2
+  },
+  {
+    "code_ouv": "20.40",
+    "code_res": "MO.07",
+    "qte_res": 1.2
+  },
+  {
+    "code_ouv": "20.40",
+    "code_res": "EQ.03",
+    "qte_res": 0.05
+  },
+  {
+    "code_ouv": "20.50",
+    "code_res": "MO.07",
+    "qte_res": 0.6
+  },
+  {
+    "code_ouv": "20.50",
+    "code_res": "EQ.03",
+    "qte_res": 0.12
+  },
+  {
+    "code_ouv": "20.60",
+    "code_res": "MO.07",
+    "qte_res": 0.65
+  },
+  {
+    "code_ouv": "20.60",
+    "code_res": "EQ.04",
+    "qte_res": 0.65
+  },
+  {
+    "code_ouv": "20.60",
+    "code_res": "EQ.03",
+    "qte_res": 0.02
+  },
+  {
+    "code_ouv": "20.70",
+    "code_res": "MO.06",
+    "qte_res": 1.1
+  },
+  {
+    "code_ouv": "20.70",
+    "code_res": "MO.07",
+    "qte_res": 0.5
+  },
+  {
+    "code_ouv": "20.70",
+    "code_res": "EQ.03",
+    "qte_res": 0.03
+  },
+  {
+    "code_ouv": "30.10",
+    "code_res": "MO.02",
+    "qte_res": 1.6
+  },
+  {
+    "code_ouv": "30.10",
+    "code_res": "MA.01",
+    "qte_res": 1.2
+  },
+  {
+    "code_ouv": "30.10",
+    "code_res": "MA.02",
+    "qte_res": 0.04
+  },
+  {
+    "code_ouv": "30.10",
+    "code_res": "EQ.04",
+    "qte_res": 1.6
+  },
+  {
+    "code_ouv": "30.20",
+    "code_res": "MO.02",
+    "qte_res": 1.4
+  },
+  {
+    "code_ouv": "30.20",
+    "code_res": "MO.07",
+    "qte_res": 0.7
+  },
+  {
+    "code_ouv": "30.20",
+    "code_res": "MA.17",
+    "qte_res": 1.05
+  },
+  {
+    "code_ouv": "30.20",
+    "code_res": "MA.01",
+    "qte_res": 0.6
+  },
+  {
+    "code_ouv": "30.20",
+    "code_res": "EQ.04",
+    "qte_res": 2.1,
+    "note": "2,10 h de petit matériel : l'étançonnement mobilise plus longtemps que la pose elle-même."
+  },
+  {
+    "code_ouv": "30.30",
+    "code_res": "MO.02",
+    "qte_res": 1.8
+  },
+  {
+    "code_ouv": "30.30",
+    "code_res": "MA.04",
+    "qte_res": 1.5
+  },
+  {
+    "code_ouv": "30.30",
+    "code_res": "MA.07",
+    "qte_res": 0.3
+  },
+  {
+    "code_ouv": "30.30",
+    "code_res": "EQ.04",
+    "qte_res": 1.8
+  },
+  {
+    "code_ouv": "30.40",
+    "code_res": "MO.02",
+    "qte_res": 0.6
+  },
+  {
+    "code_ouv": "30.40",
+    "code_res": "MA.01",
+    "qte_res": 1.4
+  },
+  {
+    "code_ouv": "30.40",
+    "code_res": "MA.02",
+    "qte_res": 0.03
+  },
+  {
+    "code_ouv": "30.40",
+    "code_res": "MA.07",
+    "qte_res": 0.1
+  },
+  {
+    "code_ouv": "30.40",
+    "code_res": "EQ.04",
+    "qte_res": 0.6
+  },
+  {
+    "code_ouv": "30.50",
+    "code_res": "MO.02",
+    "qte_res": 0.9
+  },
+  {
+    "code_ouv": "30.50",
+    "code_res": "MA.19",
+    "qte_res": 1.02
+  },
+  {
+    "code_ouv": "30.50",
+    "code_res": "MA.01",
+    "qte_res": 0.4
+  },
+  {
+    "code_ouv": "30.60",
+    "code_res": "MO.02",
+    "qte_res": 1.1
+  },
+  {
+    "code_ouv": "30.60",
+    "code_res": "MO.07",
+    "qte_res": 0.3
+  },
+  {
+    "code_ouv": "30.60",
+    "code_res": "MA.03",
+    "qte_res": 0.8
+  },
+  {
+    "code_ouv": "30.60",
+    "code_res": "MA.02",
+    "qte_res": 0.01
+  },
+  {
+    "code_ouv": "30.60",
+    "code_res": "EQ.04",
+    "qte_res": 1.4
+  },
+  {
+    "code_ouv": "40.10",
+    "code_res": "MO.07",
+    "qte_res": 0.15
+  },
+  {
+    "code_ouv": "40.10",
+    "code_res": "EQ.04",
+    "qte_res": 0.15
+  },
+  {
+    "code_ouv": "40.20",
+    "code_res": "MO.02",
+    "qte_res": 0.85
+  },
+  {
+    "code_ouv": "40.20",
+    "code_res": "MO.07",
+    "qte_res": 0.25
+  },
+  {
+    "code_ouv": "40.20",
+    "code_res": "MA.06",
+    "qte_res": 1.1
+  },
+  {
+    "code_ouv": "40.20",
+    "code_res": "MA.07",
+    "qte_res": 0.15
+  },
+  {
+    "code_ouv": "40.20",
+    "code_res": "EQ.04",
+    "qte_res": 1.1
+  },
+  {
+    "code_ouv": "40.30",
+    "code_res": "MO.04",
+    "qte_res": 0.32
+  },
+  {
+    "code_ouv": "40.30",
+    "code_res": "MA.08",
+    "qte_res": 0.35
+  },
+  {
+    "code_ouv": "40.30",
+    "code_res": "MA.07",
+    "qte_res": 0.12
+  },
+  {
+    "code_ouv": "40.40",
+    "code_res": "MO.08",
+    "qte_res": 0.55
+  },
+  {
+    "code_ouv": "40.40",
+    "code_res": "MA.10",
+    "qte_res": 2.2,
+    "note": "2,2 m2 de membrane par m2 posé : bicouche, recouvrements et relevés compris."
+  },
+  {
+    "code_ouv": "40.40",
+    "code_res": "MA.07",
+    "qte_res": 0.2
+  },
+  {
+    "code_ouv": "40.40",
+    "code_res": "EQ.04",
+    "qte_res": 0.55
+  },
+  {
+    "code_ouv": "40.50",
+    "code_res": "MO.08",
+    "qte_res": 0.45
+  },
+  {
+    "code_ouv": "40.50",
+    "code_res": "MA.11",
+    "qte_res": 1.15
+  },
+  {
+    "code_ouv": "40.50",
+    "code_res": "MA.21",
+    "qte_res": 0.05
+  },
+  {
+    "code_ouv": "40.50",
+    "code_res": "EQ.04",
+    "qte_res": 0.45
+  },
+  {
+    "code_ouv": "40.60",
+    "code_res": "MO.08",
+    "qte_res": 0.4
+  },
+  {
+    "code_ouv": "40.60",
+    "code_res": "MA.04",
+    "qte_res": 0.25
+  },
+  {
+    "code_ouv": "40.60",
+    "code_res": "MA.21",
+    "qte_res": 0.08
+  },
+  {
+    "code_ouv": "50.10",
+    "code_res": "MO.03",
+    "qte_res": 0.3
+  },
+  {
+    "code_ouv": "50.10",
+    "code_res": "MA.12",
+    "qte_res": 1.05
+  },
+  {
+    "code_ouv": "50.10",
+    "code_res": "MA.21",
+    "qte_res": 0.06
+  },
+  {
+    "code_ouv": "50.20",
+    "code_res": "MO.03",
+    "qte_res": 0.25
+  },
+  {
+    "code_ouv": "50.20",
+    "code_res": "MA.13",
+    "qte_res": 1.08
+  },
+  {
+    "code_ouv": "50.30",
+    "code_res": "MO.03",
+    "qte_res": 0.12
+  },
+  {
+    "code_ouv": "50.30",
+    "code_res": "MA.21",
+    "qte_res": 0.04
+  },
+  {
+    "code_ouv": "60.10",
+    "code_res": "MO.03",
+    "qte_res": 0.55
+  },
+  {
+    "code_ouv": "60.10",
+    "code_res": "MA.05",
+    "qte_res": 0.6
+  },
+  {
+    "code_ouv": "60.10",
+    "code_res": "MA.07",
+    "qte_res": 0.1
+  },
+  {
+    "code_ouv": "60.10",
+    "code_res": "EQ.04",
+    "qte_res": 0.55
+  },
+  {
+    "code_ouv": "60.20",
+    "code_res": "MO.03",
+    "qte_res": 0.65
+  },
+  {
+    "code_ouv": "60.20",
+    "code_res": "MA.14",
+    "qte_res": 1.05
+  },
+  {
+    "code_ouv": "60.20",
+    "code_res": "MA.15",
+    "qte_res": 1.0
+  },
+  {
+    "code_ouv": "60.20",
+    "code_res": "MA.05",
+    "qte_res": 0.1
+  },
+  {
+    "code_ouv": "60.30",
+    "code_res": "MO.03",
+    "qte_res": 0.35
+  },
+  {
+    "code_ouv": "60.30",
+    "code_res": "MA.05",
+    "qte_res": 0.25
+  },
+  {
+    "code_ouv": "60.40",
+    "code_res": "MO.03",
+    "qte_res": 0.1
+  },
+  {
+    "code_ouv": "60.40",
+    "code_res": "MA.16",
+    "qte_res": 1.05
+  },
+  {
+    "code_ouv": "70.10",
+    "code_res": "MO.04",
+    "qte_res": 0.22
+  },
+  {
+    "code_ouv": "70.10",
+    "code_res": "MA.09",
+    "qte_res": 0.3
+  },
+  {
+    "code_ouv": "70.20",
+    "code_res": "MO.04",
+    "qte_res": 0.28
+  },
+  {
+    "code_ouv": "70.20",
+    "code_res": "MA.09",
+    "qte_res": 0.32
+  },
+  {
+    "code_ouv": "70.30",
+    "code_res": "MO.04",
+    "qte_res": 0.3
+  },
+  {
+    "code_ouv": "70.30",
+    "code_res": "MA.05",
+    "qte_res": 0.3
+  },
+  {
+    "code_ouv": "70.40",
+    "code_res": "MO.02",
+    "qte_res": 0.8
+  },
+  {
+    "code_ouv": "70.40",
+    "code_res": "MA.22",
+    "qte_res": 1.08
+  },
+  {
+    "code_ouv": "70.40",
+    "code_res": "MA.23",
+    "qte_res": 0.25
+  },
+  {
+    "code_ouv": "70.50",
+    "code_res": "MO.02",
+    "qte_res": 0.35
+  },
+  {
+    "code_ouv": "70.50",
+    "code_res": "MO.07",
+    "qte_res": 0.3
+  },
+  {
+    "code_ouv": "70.50",
+    "code_res": "MA.01",
+    "qte_res": 0.9,
+    "note": "Sable + ciment, pas de sac tout prêt : une chape de ravoirage se fait au mélange."
+  },
+  {
+    "code_ouv": "70.50",
+    "code_res": "MA.02",
+    "qte_res": 0.05
+  },
+  {
+    "code_ouv": "70.50",
+    "code_res": "MA.28",
+    "qte_res": 1.05
+  },
+  {
+    "code_ouv": "70.50",
+    "code_res": "EQ.04",
+    "qte_res": 0.65
+  },
+  {
+    "code_ouv": "70.60",
+    "code_res": "MO.02",
+    "qte_res": 0.85
+  },
+  {
+    "code_ouv": "70.60",
+    "code_res": "MA.29",
+    "qte_res": 1.08
+  },
+  {
+    "code_ouv": "70.60",
+    "code_res": "MA.23",
+    "qte_res": 0.3
+  },
+  {
+    "code_ouv": "70.60",
+    "code_res": "MA.16",
+    "qte_res": 0.2
+  },
+  {
+    "code_ouv": "70.70",
+    "code_res": "MO.04",
+    "qte_res": 0.55,
+    "note": "0,55 h/m2 : le ponçage préalable est compris."
+  },
+  {
+    "code_ouv": "70.70",
+    "code_res": "MA.34",
+    "qte_res": 0.25
+  },
+  {
+    "code_ouv": "70.70",
+    "code_res": "MA.07",
+    "qte_res": 0.08
+  },
+  {
+    "code_ouv": "80.10",
+    "code_res": "MO.05",
+    "qte_res": 1.1
+  },
+  {
+    "code_ouv": "80.10",
+    "code_res": "MA.18",
+    "qte_res": 1.0
+  },
+  {
+    "code_ouv": "80.10",
+    "code_res": "MA.21",
+    "qte_res": 0.3
+  },
+  {
+    "code_ouv": "80.20",
+    "code_res": "MO.05",
+    "qte_res": 6.0
+  },
+  {
+    "code_ouv": "80.20",
+    "code_res": "MA.20",
+    "qte_res": 1.0
+  },
+  {
+    "code_ouv": "80.20",
+    "code_res": "MA.21",
+    "qte_res": 1.0
+  },
+  {
+    "code_ouv": "80.30",
+    "code_res": "MO.05",
+    "qte_res": 0.65
+  },
+  {
+    "code_ouv": "80.30",
+    "code_res": "MA.25",
+    "qte_res": 1.0
+  },
+  {
+    "code_ouv": "80.30",
+    "code_res": "MA.21",
+    "qte_res": 0.15
+  },
+  {
+    "code_ouv": "80.40",
+    "code_res": "MO.06",
+    "qte_res": 0.35
+  },
+  {
+    "code_ouv": "80.40",
+    "code_res": "MA.26",
+    "qte_res": 1.05
+  },
+  {
+    "code_ouv": "80.40",
+    "code_res": "MA.21",
+    "qte_res": 0.1
+  },
+  {
+    "code_ouv": "80.50",
+    "code_res": "MO.06",
+    "qte_res": 0.3
+  },
+  {
+    "code_ouv": "80.50",
+    "code_res": "MA.27",
+    "qte_res": 1.08
+  },
+  {
+    "code_ouv": "80.50",
+    "code_res": "MA.21",
+    "qte_res": 0.12
+  },
+  {
+    "code_ouv": "80.60",
+    "code_res": "MO.02",
+    "qte_res": 0.3
+  },
+  {
+    "code_ouv": "80.60",
+    "code_res": "MA.24",
+    "qte_res": 1.1
+  },
+  {
+    "code_ouv": "80.60",
+    "code_res": "MA.07",
+    "qte_res": 0.1
+  },
+  {
+    "code_ouv": "80.70",
+    "code_res": "MO.06",
+    "qte_res": 5.0,
+    "note": "5 h : le bâti-support doit être scellé, pas seulement posé."
+  },
+  {
+    "code_ouv": "80.70",
+    "code_res": "MA.30",
+    "qte_res": 1.0
+  },
+  {
+    "code_ouv": "80.70",
+    "code_res": "MA.21",
+    "qte_res": 0.5
+  },
+  {
+    "code_ouv": "80.80",
+    "code_res": "MO.06",
+    "qte_res": 4.0
+  },
+  {
+    "code_ouv": "80.80",
+    "code_res": "MA.21",
+    "qte_res": 0.2
+  },
+  {
+    "code_ouv": "90.10",
+    "code_res": "MO.09",
+    "qte_res": 0.75
+  },
+  {
+    "code_ouv": "90.10",
+    "code_res": "MA.31",
+    "qte_res": 1.0
+  },
+  {
+    "code_ouv": "90.10",
+    "code_res": "MA.32",
+    "qte_res": 8.0,
+    "note": "8 m de câble en moyenne jusqu'au tableau."
+  },
+  {
+    "code_ouv": "90.10",
+    "code_res": "MA.21",
+    "qte_res": 0.05
+  },
+  {
+    "code_ouv": "90.20",
+    "code_res": "MO.09",
+    "qte_res": 6.0
+  },
+  {
+    "code_ouv": "90.20",
+    "code_res": "MA.33",
+    "qte_res": 1.0
+  },
+  {
+    "code_ouv": "90.20",
+    "code_res": "MA.32",
+    "qte_res": 25.0
+  },
+  {
+    "code_ouv": "90.20",
+    "code_res": "MA.21",
+    "qte_res": 0.4
+  },
+  {
+    "code_ouv": "90.30",
+    "code_res": "MO.01",
+    "qte_res": 1.5
+  },
+  {
+    "code_ouv": "90.30",
+    "code_res": "MA.35",
+    "qte_res": 1.0,
+    "note": "La visite est sous-traitée à l'organisme agréé ; nous n'apportons que l'accompagnement sur place."
+  }
+]

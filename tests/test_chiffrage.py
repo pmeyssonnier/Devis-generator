@@ -1408,3 +1408,105 @@ def test_commit_des_parametres_n_additionne_rien():
     assert vu["sha"] == "sha-distant"
     assert vu["chemin"].endswith("parametres_local.json")
     assert url.startswith("https://github.com/")
+
+
+# ── 17. Les tables sont des données, pas du code ─────
+@pytest.fixture
+def data_copiee(tmp_path):
+    import shutil
+
+    from chiffrage.bibliotheque import DOSSIER_DATA
+
+    cible = tmp_path / "data"
+    shutil.copytree(DOSSIER_DATA, cible)
+    return cible
+
+
+def _modifier(dossier, table, transformer):
+    import json
+
+    fichier = dossier / f"{table}.json"
+    fichier.write_text(
+        json.dumps(transformer(json.loads(fichier.read_text("utf-8"))),
+                    ensure_ascii=False),
+        encoding="utf-8")
+
+
+def test_les_tables_json_donnent_les_memes_prix():
+    """La migration ne devait rien déplacer : mêmes 49 prix, au centime."""
+    b = moteur.calcul_bordereau()
+    assert len(b) == 49
+    assert b["40.20"]["pu_vente"] == 98.64
+    assert b["70.10"]["pu_vente"] == 15.51
+    assert round(moteur.coefficient_k(), 4) == 1.3324
+
+
+def test_les_notes_de_raisonnement_ont_survecu():
+    """Un JSON est muet : le POURQUOI d'un chiffre devait devenir une
+    donnée, sinon il disparaissait avec les commentaires Python."""
+    notes = {(c["code_ouv"], c["code_res"]): c.get("note")
+             for c in biblio.COMPOSITION if c.get("note")}
+    assert "double compte" in notes[("10.10", "MO.01")]
+    assert "bicouche" in notes[("40.40", "MA.10")]
+    assert all("Coût entreprise COMPLET" in r["note"]
+                for r in biblio.RESSOURCES if r["type_res"] == "MO")
+
+
+@pytest.mark.parametrize("table, transformer, motif", [
+    ("composition",
+     lambda d: d + [{"code_ouv": "40.20", "code_res": "MA.99", "qte_res": 1}],
+     "inexistante"),
+    ("ouvrages",
+     lambda d: d + [{"code_ouv": "40.99", "libelle_ouv": "Fantôme",
+                      "unite_ouv": "m2", "code_ref": ""}],
+     "0 €"),
+    ("ouvrages",
+     lambda d: [dict(o, unite_ouv="") if o["code_ouv"] == "40.20" else o
+                 for o in d],
+     "unité manquante"),
+    ("ressources",
+     lambda d: [dict(r, type_res="XXX") if r["code_res"] == "MO.01" else r
+                 for r in d],
+     "inconnu"),
+    ("ressources",
+     lambda d: [dict(r, pu_res=-5) if r["code_res"] == "MA.01" else r
+                 for r in d],
+     "invalide"),
+    ("mapping", lambda d: {**d, "99.99": "40.99"}, "inexistant"),
+])
+def test_une_table_incoherente_est_refusee(data_copiee, table, transformer,
+                                            motif):
+    """Éditable à la main veut dire corrompable à la main. Chacune de
+    ces fautes produirait un prix faux sans se voir dans un JSON de
+    150 lignes : une ressource orpheline vaut zéro, un ouvrage sans
+    composition se vend gratuitement."""
+    from chiffrage.bibliotheque import BibliothequeInvalide
+
+    from chiffrage.bibliotheque import charger_tables
+
+    _modifier(data_copiee, table, transformer)
+    with pytest.raises(BibliothequeInvalide, match=motif):
+        charger_tables(data_copiee)
+
+
+def test_une_table_manquante_arrete_tout(data_copiee):
+    """Pas de valeurs de repli ici, à la différence du lexique : une
+    bibliothèque vide ne dégraderait pas le résultat, elle rendrait
+    « aucun ouvrage » pour tous les postes — une offre entièrement
+    vide, présentée comme normale."""
+    from chiffrage.bibliotheque import BibliothequeInvalide
+
+    from chiffrage.bibliotheque import charger_tables
+
+    (data_copiee / "lots.json").unlink()
+    with pytest.raises(BibliothequeInvalide, match="manquante"):
+        charger_tables(data_copiee)
+
+
+def test_le_lot_se_deduit_du_code(data_copiee):
+    """Stocker le lot deux fois, c'est risquer qu'ils divergent."""
+    import json
+
+    brut = json.loads((data_copiee / "ouvrages.json").read_text("utf-8"))
+    assert all("lot" not in o for o in brut)
+    assert biblio.OUVRAGES_PAR_CODE["40.20"]["lot"] == "40"
