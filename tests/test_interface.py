@@ -423,3 +423,73 @@ def test_le_bouton_d_enregistrement_n_apparait_qu_apres_correction(app):
 
     # Sans jeton GitHub, la table corrigée reste téléchargeable.
     assert any("ressources.json" in d.label for d in app.get("download_button"))
+
+
+def _regler(app, cle, valeur, liste):
+    [w for w in getattr(app, liste) if w.key == cle][0].set_value(valeur).run()
+
+
+def test_creer_un_ouvrage_complet(app, tmp_path):
+    """Créer un ouvrage absent : identité, unité, composition — et le
+    résultat doit passer le contrôle du chargeur, sans quoi l'app
+    refuserait de démarrer au prochain déploiement."""
+    import json
+    import shutil
+
+    from chiffrage.bibliotheque import DOSSIER_DATA, charger_tables
+
+    _regler(app, "neuf_lot", "70", "selectbox")
+    _regler(app, "neuf_libelle", "Ragréage de sol autolissant", "text_input")
+    _regler(app, "neuf_unite", "m2", "selectbox")
+
+    for ressource, quantite in [("MO.02", 0.25), ("MA.23", 0.6)]:
+        _regler(app, "neuf_res", ressource, "selectbox")
+        _regler(app, "neuf_qte", quantite, "number_input")
+        [b for b in app.button if b.key == "neuf_add"][0].click().run()
+    assert not app.exception, [e.value for e in app.exception]
+
+    [b for b in app.button if b.key == "neuf_creer"][0].click().run()
+    assert not app.exception, [e.value for e in app.exception]
+
+    tables = app.session_state["tables_editees"]
+    neufs = [o for o in tables["ouvrages"] if o["code_ouv"] == "70.80"]
+    assert neufs and neufs[0]["unite_ouv"] == "m2"
+    assert sum(1 for c in tables["composition"]
+                if c["code_ouv"] == "70.80") == 2
+
+    # Le fichier produit doit être rechargeable : un ouvrage sans
+    # composition, ou dont l'unité manque, ferait échouer le démarrage.
+    data = tmp_path / "data"
+    shutil.copytree(DOSSIER_DATA, data)
+    (data / "ouvrages.json").write_text(json.dumps(
+        [{k: v for k, v in o.items() if k != "lot"}
+         for o in tables["ouvrages"]], ensure_ascii=False), encoding="utf-8")
+    (data / "composition.json").write_text(json.dumps(
+        tables["composition"], ensure_ascii=False), encoding="utf-8")
+    rechargees = charger_tables(data)
+    assert "70.80" in rechargees["ouvrages_par_code"]
+
+
+def test_le_numero_propose_suit_le_lot(app):
+    """Un widget à clé garde SA valeur d'un rerun à l'autre : sans
+    remise à jour, changer de lot laissait le numéro du lot précédent
+    — qui tombait sur un code déjà pris, et la création échouait."""
+    _regler(app, "neuf_lot", "30", "selectbox")
+    assert any("30.70" in m.value for m in app.markdown)
+    _regler(app, "neuf_lot", "90", "selectbox")
+    assert any("90.40" in m.value for m in app.markdown)
+
+
+def test_un_code_deja_pris_bloque_la_creation(app):
+    _regler(app, "neuf_lot", "40", "selectbox")
+    _regler(app, "neuf_num", 20, "number_input")      # 40.20 existe
+    assert any("existe déjà" in e.value for e in app.error)
+    assert [b for b in app.button if b.key == "neuf_creer"][0].disabled
+
+
+def test_un_ouvrage_sans_composition_ne_peut_pas_etre_cree(app):
+    """Sans composition il se vendrait à 0 €, et le contrôle au
+    chargement le refuserait — autant l'empêcher ici."""
+    _regler(app, "neuf_lot", "70", "selectbox")
+    _regler(app, "neuf_libelle", "Poste sans composition", "text_input")
+    assert [b for b in app.button if b.key == "neuf_creer"][0].disabled

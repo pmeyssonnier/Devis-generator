@@ -966,19 +966,168 @@ with onglet_biblio:
         if abs(ligne["qte_res"] - ancienne) > 1e-9:
             st.caption(f"Corrigé : {ancienne:.3f} → **{ligne['qte_res']:.3f}** h")
 
+    # ── Créer un ouvrage ───────────────────────
+    with st.expander("➕ Créer un ouvrage absent de la bibliothèque"):
+        st.markdown(
+            "Un ouvrage ne se résume pas à un prix : il lui faut un code, "
+            "une **unité** — sans elle le contrôle d'unité devient "
+            "inopérant — et surtout une **composition**. Sans composition, "
+            "il se vendrait à 0 €, et le contrôle au chargement le refuse."
+        )
+
+        brouillon = st.session_state.setdefault(
+            "nouvel_ouvrage", {"lignes": []})
+
+        col_lot, col_num = st.columns(2)
+        lot = col_lot.selectbox(
+            "Lot", sorted(LOTS),
+            format_func=lambda code: f"{code} — {LOTS[code]}",
+            key="neuf_lot")
+        # Numéro libre suivant, par pas de dix comme le reste de la
+        # bibliothèque : on laisse de la place pour intercaler.
+        pris = {int(o["code_ouv"].split(".")[1])
+                 for o in tables["ouvrages"] if o["lot"] == lot}
+        suivant = min(max(pris, default=0) + 10, 99)
+        # Un widget à clé garde SA valeur d'un rerun à l'autre : sans
+        # cette remise à jour, changer de lot laissait le numéro du lot
+        # précédent, qui tombait sur un code déjà pris. La valeur doit
+        # être posée AVANT d'instancier le widget.
+        if st.session_state.get("neuf_dernier_lot") != lot:
+            st.session_state.neuf_dernier_lot = lot
+            st.session_state.neuf_num = suivant
+        st.session_state.setdefault("neuf_num", suivant)
+        # Pas de `value=` ici : le widget a une clé et sa valeur vient
+        # de session_state. Passer les deux fait râler Streamlit, à
+        # raison — laquelle des deux ferait foi ?
+        numero = col_num.number_input(
+            "Numéro", min_value=1, max_value=99, step=1, key="neuf_num")
+        code_neuf = f"{lot}.{int(numero):02d}"
+
+        libelle = st.text_input("Désignation", key="neuf_libelle",
+                                 placeholder="Ce que le poste recouvre, "
+                                              "tel qu'il sera lu par le client")
+        unite = st.selectbox(
+            "Unité",
+            sorted({o["unite_ouv"] for o in tables["ouvrages"]}),
+            key="neuf_unite",
+            help="L'unité est éliminatoire à l'appariement : un poste "
+                  "imposé au mètre courant ne sera jamais chiffré par un "
+                  "ouvrage au m2.")
+
+        deja_pris = code_neuf in tables["ouvrages_par_code"]
+        if deja_pris:
+            st.error(
+                f"{code_neuf} existe déjà : "
+                f"« {tables['ouvrages_par_code'][code_neuf]['libelle_ouv']} ». "
+                f"Choisir un autre numéro.", icon="🛑")
+
+        # ── Sa composition, une ligne à la fois ────────
+        st.markdown(f"**Composition de {code_neuf}** — par "
+                     f"{unite or 'unité'}")
+        col_res, col_qte, col_add = st.columns([3, 2, 1])
+        res_choisie = col_res.selectbox(
+            "Ressource",
+            [r["code_res"] for r in tables["ressources"]],
+            format_func=lambda c: (
+                f"{c} · {tables['ressources_par_code'][c]['libelle_res'][:34]}"
+                f" — {tables['ressources_par_code'][c]['pu_res']:.2f} €"
+                f"/{tables['ressources_par_code'][c]['unite_res']}"),
+            key="neuf_res", label_visibility="collapsed")
+        type_res = tables["ressources_par_code"][res_choisie]["type_res"]
+        qte = col_qte.number_input(
+            "Quantité", 0.0, value=1.0, step=0.05,
+            format="%.3f", key="neuf_qte", label_visibility="collapsed",
+            help="Sur une ressource MO, c'est le RENDEMENT en heures "
+                  "par unité d'ouvrage.")
+        col_add.write("")
+        if col_add.button("➕", width="stretch", key="neuf_add",
+                           disabled=qte <= 0):
+            brouillon["lignes"] = [
+                ligne for ligne in brouillon["lignes"]
+                if ligne["code_res"] != res_choisie
+            ] + [{"code_res": res_choisie, "qte_res": float(qte)}]
+            st.rerun()
+        if type_res == "MO":
+            st.caption("🛈 Ressource de main-d'œuvre : cette quantité est un "
+                        "**rendement**, en heures par unité d'ouvrage.")
+
+        if brouillon["lignes"]:
+            debourse = sum(
+                ligne["qte_res"]
+                * tables["ressources_par_code"][ligne["code_res"]]["pu_res"]
+                for ligne in brouillon["lignes"])
+            heures = sum(
+                ligne["qte_res"] for ligne in brouillon["lignes"]
+                if tables["ressources_par_code"][
+                    ligne["code_res"]]["type_res"] == "MO")
+            st.dataframe(
+                [{"Ressource": ligne["code_res"],
+                   "Désignation": tables["ressources_par_code"][
+                       ligne["code_res"]]["libelle_res"],
+                   "Type": tables["ressources_par_code"][
+                       ligne["code_res"]]["type_res"],
+                   "Quantité": ligne["qte_res"],
+                   "Montant": round(
+                       ligne["qte_res"] * tables["ressources_par_code"][
+                           ligne["code_res"]]["pu_res"], 2)}
+                  for ligne in brouillon["lignes"]],
+                hide_index=True, width="stretch",
+                column_config={
+                    "Quantité": st.column_config.NumberColumn(format="%.3f"),
+                    "Montant": st.column_config.NumberColumn(format="%.2f €"),
+                })
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Déboursé sec", f"{debourse:.2f} €")
+            c2.metric("Prix de vente",
+                       f"{debourse * coefficient_k(params):.2f} €")
+            c3.metric("Main-d'œuvre", f"{heures:.3f} h")
+
+            if st.button("↩️ Vider la composition", key="neuf_vider"):
+                brouillon["lignes"] = []
+                st.rerun()
+        else:
+            st.caption("Aucune ressource pour l'instant — un ouvrage sans "
+                        "composition ne peut pas être créé.")
+
+        pret = bool(libelle.strip()) and bool(unite) \
+            and bool(brouillon["lignes"]) and not deja_pris
+        if st.button(f"Créer {code_neuf}", type="primary", disabled=not pret,
+                      key="neuf_creer", width="stretch"):
+            tables["ouvrages"].append({
+                "code_ouv": code_neuf, "lot": lot,
+                "libelle_ouv": libelle.strip(), "unite_ouv": unite,
+                "code_ref": ""})
+            tables["ouvrages_par_code"][code_neuf] = tables["ouvrages"][-1]
+            tables["composition"].extend(
+                {"code_ouv": code_neuf, **ligne}
+                for ligne in brouillon["lignes"])
+            st.session_state.nouvel_ouvrage = {"lignes": []}
+            st.rerun()
+        if not pret and not deja_pris:
+            st.caption("Il manque une désignation ou une composition.")
+
     # ── Effet en direct ────────────────────────
     modifs_res = [r for r in tables["ressources"]
                    if r["pu_res"] != origine["ressources_par_code"][
                        r["code_res"]]["pu_res"]]
-    modifs_compo = [
-        (a, b) for a, b in zip(tables["composition"], origine["composition"])
-        if a["qte_res"] != b["qte_res"]]
+    # Comparaison PAR CLÉ et non par position : un zip s'arrête à la
+    # plus courte des deux listes, si bien que les lignes ajoutées en
+    # créant un ouvrage passaient inaperçues — et le bouton
+    # d'enregistrement n'apparaissait jamais pour elles.
+    cle = lambda ligne: (ligne["code_ouv"], ligne["code_res"])  # noqa: E731
+    compo_origine = {cle(c): c["qte_res"] for c in origine["composition"]}
+    modifs_compo = [c for c in tables["composition"]
+                     if compo_origine.get(cle(c)) != c["qte_res"]]
+    ouvrages_neufs = [o for o in tables["ouvrages"]
+                       if o["code_ouv"] not in origine["ouvrages_par_code"]]
 
     avant = calibration(params)
     apres = calibration(params, tables=tables)
 
     m1, m2, m3 = st.columns(3)
-    m1.metric("Valeurs corrigées", len(modifs_res) + len(modifs_compo))
+    m1.metric("Valeurs corrigées", len(modifs_res) + len(modifs_compo),
+               f"+{len(ouvrages_neufs)} ouvrage(s)" if ouvrages_neufs else None,
+               delta_color="off")
     m2.metric("Écart moyen absolu",
                f"{apres['ecart_moyen_absolu'] * 100:.1f} %",
                f"{(apres['ecart_moyen_absolu'] - avant['ecart_moyen_absolu']) * 100:+.1f} pt"
@@ -988,7 +1137,7 @@ with onglet_biblio:
                sum(1 for r in apres["lignes"] if abs(r["ecart"]) > 0.15),
                help="Cible : moins de 15 % d'écart sur CHAQUE ligne.")
 
-    if modifs_res or modifs_compo:
+    if modifs_res or modifs_compo or ouvrages_neufs:
         st.dataframe(
             [{"Devis": r["devis"], "Objet": r["objet"],
                "Forfait vendu": r["forfait"], "Calculé": r["calcule"],
@@ -1007,8 +1156,14 @@ with onglet_biblio:
         a_ecrire = {}
         if modifs_res:
             a_ecrire["ressources"] = tables["ressources"]
-        if modifs_compo:
+        if modifs_compo or ouvrages_neufs:
             a_ecrire["composition"] = tables["composition"]
+        if ouvrages_neufs:
+            # Le lot se déduit du code : on ne le réécrit pas dans le
+            # fichier, sinon les deux pourraient diverger.
+            a_ecrire["ouvrages"] = [
+                {k: v for k, v in o.items() if k != "lot"}
+                for o in tables["ouvrages"]]
 
         try:
             github = dict(st.secrets.get("github", {}))

@@ -455,6 +455,14 @@ celles du module. **Les corrections ne valent que pour l'aperçu** tant
 qu'elles ne sont pas enregistrées : les devis et les offres continuent
 d'utiliser la bibliothèque du dépôt. Un test le vérifie.
 
+**Créer un ouvrage absent** se fait au même endroit. Un ouvrage ne se
+résume pas à un prix : il lui faut un code, une **unité** — sans elle
+le contrôle d'unité devient inopérant — et surtout une
+**composition**, sans quoi il se vendrait à 0 € et le contrôle au
+chargement le refuserait. Le formulaire propose le prochain numéro
+libre du lot, ajoute les ressources une à une, et affiche le déboursé
+et le prix de vente à mesure.
+
 L'enregistrement passe par le même jeton que le lexique, et n'écrit
 que les tables réellement modifiées. Sans jeton, elles se téléchargent.
 
@@ -638,7 +646,7 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-156 tests. Ceux de la chaîne Excel se skippent sans openpyxl, ceux de
+160 tests. Ceux de la chaîne Excel se skippent sans openpyxl, ceux de
 l'interface sans streamlit. L'écriture GitHub est testée avec un
 dépôt simulé — la suite ne touche jamais au réseau.
 
