@@ -376,3 +376,38 @@ def test_une_session_amputee_se_recalcule_au_lieu_de_planter(app, tmp_path):
     app.run()
     assert not app.exception, [e.value for e in app.exception]
     assert {m.label: m.value for m in app.metric}["Appariés"] == "49"
+
+
+def test_corriger_une_valeur_en_trois_gestes(app):
+    """Un tableur de 49 lignes ne se remplit pas au doigt : une
+    correction qui ne « prend » pas ne se voit pas, et le bouton
+    d'enregistrement — qui n'apparaît qu'après une modification —
+    reste introuvable. On corrige donc une valeur à la fois."""
+    choix = [s for s in app.selectbox if s.key == "corr_res"]
+    assert choix, "sélecteur de ressource absent"
+
+    choix[0].set_value("MO.02").run()
+    [n for n in app.number_input if n.key == "corr_res_valeur"][0] \
+        .set_value(55.0).run()
+    [b for b in app.button if b.key == "corr_res_ok"][0].click().run()
+    assert not app.exception, [e.value for e in app.exception]
+
+    assert {m.label: m.value for m in app.metric}["Valeurs corrigées"] == "1"
+    # L'atelier recalcule ; l'onglet Calibration garde les valeurs du dépôt.
+    ecarts = [m.value for m in app.metric if m.label == "Écart moyen absolu"]
+    assert ecarts[0] == "16.2 %" and ecarts[1] == "15.2 %"
+
+
+def test_le_bouton_d_enregistrement_n_apparait_qu_apres_correction(app):
+    """Il était introuvable parce qu'il n'existe pas sans modification —
+    voulu, mais déroutant si la saisie n'a pas été prise."""
+    assert not [b for b in app.button if "Enregistrer" in b.label
+                 and "table" in b.label]
+
+    [s for s in app.selectbox if s.key == "corr_res"][0].set_value("MO.02").run()
+    [n for n in app.number_input if n.key == "corr_res_valeur"][0] \
+        .set_value(55.0).run()
+    [b for b in app.button if b.key == "corr_res_ok"][0].click().run()
+
+    # Sans jeton GitHub, la table corrigée reste téléchargeable.
+    assert any("ressources.json" in d.label for d in app.get("download_button"))

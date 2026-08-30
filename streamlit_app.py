@@ -881,67 +881,90 @@ with onglet_biblio:
     tables = st.session_state.tables_editees
     origine = tables_courantes()
 
-    onglet_res, onglet_rend = st.tabs(
-        ["Taux horaires et prix d'achat", "Rendements (h/unité)"])
+    # ── Corriger une valeur ────────────────────
+    # Un tableur de 49 lignes ne se remplit pas au doigt : taper dans
+    # une cellule, valider la saisie, en sortir — chaque geste rate une
+    # fois sur deux sur un téléphone, et une correction qui ne « prend »
+    # pas ne se voit pas. On corrige donc UNE valeur à la fois, en trois
+    # gestes sûrs : choisir, saisir, appliquer.
+    quoi = st.radio(
+        "Que corriger ?",
+        ["Un taux horaire ou un prix d'achat", "Un rendement (h/unité)"],
+        horizontal=True, label_visibility="collapsed")
 
-    with onglet_res:
+    origine_res = origine["ressources_par_code"]
+    origine_ouv = origine["ouvrages_par_code"]
+
+    if quoi.startswith("Un taux"):
         st.caption(
             "Les taux MO doivent être le **coût entreprise complet** — "
             "salaire, ONSS patronale, pécule, jours fériés, assurance loi, "
             "déplacements, EPI. Surtout pas le brut."
         )
-        edite_res = st.data_editor(
-            [{"Code": r["code_res"], "Désignation": r["libelle_res"],
-               "Type": r["type_res"], "Unité": r["unite_res"],
-               "Prix": r["pu_res"], "Note": r.get("note", "")}
-              for r in tables["ressources"]],
-            hide_index=True, width="stretch", height=340,
-            disabled=["Code", "Désignation", "Type", "Unité", "Note"],
-            column_config={
-                "Prix": st.column_config.NumberColumn(
-                    "Prix d'achat / taux", min_value=0.0, step=0.5,
-                    format="%.2f €", required=True),
-                "Note": st.column_config.TextColumn(width="large"),
-            },
-            key="editeur_ressources")
-        prix_saisis = {ligne["Code"]: ligne["Prix"] for ligne in edite_res}
-        for res in tables["ressources"]:
-            if res["code_res"] in prix_saisis:
-                res["pu_res"] = float(prix_saisis[res["code_res"]])
-        tables["ressources_par_code"] = {r["code_res"]: r
-                                          for r in tables["ressources"]}
+        choix = st.selectbox(
+            "Ressource",
+            [r["code_res"] for r in tables["ressources"]],
+            format_func=lambda c: (
+                f"{c} · {origine_res[c]['libelle_res']} — "
+                f"{tables['ressources_par_code'][c]['pu_res']:.2f} €"
+                f"/{origine_res[c]['unite_res']}"),
+            key="corr_res")
+        actuelle = tables["ressources_par_code"][choix]
+        if actuelle.get("note"):
+            st.caption(f"🛈 {actuelle['note']}")
 
-    with onglet_rend:
+        col_val, col_btn = st.columns([2, 1])
+        valeur = col_val.number_input(
+            f"Nouveau prix ({origine_res[choix]['unite_res']})",
+            min_value=0.0, value=float(actuelle["pu_res"]), step=0.5,
+            format="%.2f", key="corr_res_valeur")
+        col_btn.write("")
+        if col_btn.button("Appliquer", width="stretch", key="corr_res_ok"):
+            actuelle["pu_res"] = float(valeur)
+            tables["ressources_par_code"] = {r["code_res"]: r
+                                              for r in tables["ressources"]}
+            st.rerun()
+        if abs(actuelle["pu_res"] - origine_res[choix]["pu_res"]) > 1e-9:
+            st.caption(f"Corrigé : {origine_res[choix]['pu_res']:.2f} € → "
+                        f"**{actuelle['pu_res']:.2f} €**")
+    else:
         st.caption(
             "Le rendement est la **seule donnée non achetable** : elle "
             "vient de l'expérience du chantier, et pèse la majeure partie "
             "du déboursé. C'est ici que la calibration se joue."
         )
         a_valider = set(OUVRAGES_A_VALIDER)
-        lignes_mo = [
-            (i, c) for i, c in enumerate(tables["composition"])
-            if tables["ressources_par_code"][c["code_res"]]["type_res"] == "MO"
-        ]
-        edite_rend = st.data_editor(
-            [{"Ouvrage": c["code_ouv"],
-               "Désignation": origine["ouvrages_par_code"][c["code_ouv"]]["libelle_ouv"],
-               "Un.": origine["ouvrages_par_code"][c["code_ouv"]]["unite_ouv"],
-               "Qui": c["code_res"],
-               "h/unité": c["qte_res"],
-               "": "⚠️" if c["code_ouv"] in a_valider else "",
-               "Note": c.get("note", "")}
-              for _, c in lignes_mo],
-            hide_index=True, width="stretch", height=340,
-            disabled=["Ouvrage", "Désignation", "Un.", "Qui", "", "Note"],
-            column_config={
-                "h/unité": st.column_config.NumberColumn(
-                    min_value=0.0, step=0.05, format="%.3f", required=True),
-                "Note": st.column_config.TextColumn(width="medium"),
-            },
-            key="editeur_rendements")
-        for (indice, _), ligne in zip(lignes_mo, edite_rend):
-            tables["composition"][indice]["qte_res"] = float(ligne["h/unité"])
-        st.caption("⚠️ = rendement jamais confronté à un chantier réel.")
+        indices_mo = [
+            i for i, c in enumerate(tables["composition"])
+            if origine_res[c["code_res"]]["type_res"] == "MO"]
+        choix = st.selectbox(
+            "Ouvrage et main-d'œuvre",
+            indices_mo,
+            format_func=lambda i: (
+                f"{'⚠️ ' if tables['composition'][i]['code_ouv'] in a_valider else ''}"
+                f"{tables['composition'][i]['code_ouv']} · "
+                f"{origine_ouv[tables['composition'][i]['code_ouv']]['libelle_ouv'][:44]}"
+                f" — {tables['composition'][i]['qte_res']:.3f} h/"
+                f"{origine_ouv[tables['composition'][i]['code_ouv']]['unite_ouv']}"),
+            key="corr_rend")
+        ligne = tables["composition"][choix]
+        if ligne.get("note"):
+            st.caption(f"🛈 {ligne['note']}")
+        if ligne["code_ouv"] in a_valider:
+            st.caption("⚠️ Rendement jamais confronté à un chantier réel.")
+
+        col_val, col_btn = st.columns([2, 1])
+        valeur = col_val.number_input(
+            f"Heures par {origine_ouv[ligne['code_ouv']]['unite_ouv']}",
+            min_value=0.0, value=float(ligne["qte_res"]), step=0.05,
+            format="%.3f", key="corr_rend_valeur")
+        col_btn.write("")
+        if col_btn.button("Appliquer", width="stretch", key="corr_rend_ok"):
+            ligne["qte_res"] = float(valeur)
+            st.rerun()
+        ancienne = origine["composition"][choix]["qte_res"]
+        if abs(ligne["qte_res"] - ancienne) > 1e-9:
+            st.caption(f"Corrigé : {ancienne:.3f} → **{ligne['qte_res']:.3f}** h")
 
     # ── Effet en direct ────────────────────────
     modifs_res = [r for r in tables["ressources"]

@@ -438,6 +438,12 @@ horaires et prix d'achat d'un côté, les **rendements** de l'autre —
 les deux seules tables que le chef d'entreprise puisse corriger, et
 celles dont dépend toute la calibration.
 
+**Une valeur à la fois, en trois gestes** : choisir, saisir, appliquer.
+Un tableur de 49 lignes ne se remplit pas au doigt — taper dans une
+cellule, valider la saisie, en sortir : chaque geste rate une fois sur
+deux sur un téléphone, et une correction qui ne « prend » pas ne se
+voit pas.
+
 **L'effet s'affiche en direct.** Corriger un taux recalcule les six
 devis historiques et montre l'écart avant/après, ligne par ligne.
 C'est l'écran de la séance de calibration : *« on relève le taux
@@ -632,7 +638,7 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-152 tests. Ceux de la chaîne Excel se skippent sans openpyxl, ceux de
+156 tests. Ceux de la chaîne Excel se skippent sans openpyxl, ceux de
 l'interface sans streamlit. L'écriture GitHub est testée avec un
 dépôt simulé — la suite ne touche jamais au réseau.
 
