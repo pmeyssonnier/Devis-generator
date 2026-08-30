@@ -616,3 +616,72 @@ def test_un_code_inconnu_dans_une_correspondance_reste_affiche(app, tmp_path):
                          json.dumps({"01.01": "99.99"}).encode(),
                          "application/json")).run()
     assert any("99.99" in w.value for w in app.warning)
+
+
+# ── Le tableau du devis montre des libellés, pas des codes ──────────────────
+
+# `st.data_editor` n'est pas exposé par AppTest : ses options ne peuvent pas
+# être lues depuis l'app en marche. Ces deux tests attaquent donc directement
+# les fonctions qui les construisent.
+
+def _ui():
+    """Le module de l'interface, importé pour ses fonctions pures.
+
+    L'import exécute le script en mode « bare » : Streamlit prévient que
+    l'état de session n'y fonctionne pas, ce qui est sans effet ici — on
+    n'appelle que du calcul de libellés.
+    """
+    pytest.importorskip("streamlit")
+    import streamlit_app  # noqa: PLC0415
+
+    return streamlit_app
+
+
+def test_un_libelle_redonne_toujours_son_code():
+    """Le tableau montre « 40.20 · Enduit de façade · 98,64 €/m2 » et
+    range « 40.20 ». Le jour où un libellé contiendrait le séparateur,
+    le devis se chiffrerait sur un autre ouvrage sans rien dire."""
+    ui = _ui()
+    b = ui._bordereau()
+    for code in b:
+        assert ui._code_du_libelle(ui._libelle_ouvrage(code, b)) == code
+
+
+def test_le_libelle_porte_la_designation_et_le_prix():
+    """Un code seul est illisible : personne ne retient cinquante codes,
+    et un mauvais choix ne se verrait qu'au chantier. Le prix affiché
+    sert de contrôle de vraisemblance au moment du choix."""
+    ui = _ui()
+    b = ui._bordereau()
+    libelle = ui._libelle_ouvrage("40.20", b)
+    assert b["40.20"]["libelle_ouv"] in libelle
+    assert b["40.20"]["unite_ouv"] in libelle
+    assert f"{b['40.20']['pu_vente']:.2f}" in libelle
+
+
+def test_les_postes_restent_ranges_par_code(app):
+    """Le libellé affiché porte le prix du jour : le garder en session
+    afficherait un prix périmé après un changement de marge. C'est le
+    code qui est stocké, le libellé qui est reconstruit."""
+    assert all("code_ouv" in ligne
+                for ligne in app.session_state["lignes_devis"])
+
+
+def test_une_ligne_en_cours_de_saisie_survit_a_une_reexecution(app):
+    """Ouvrage choisi, quantité pas encore tapée : filtrer les lignes
+    incomplètes ferait disparaître sous les doigts celle qu'on vient
+    d'ajouter."""
+    app.session_state["lignes_devis"] = [{"code_ouv": "40.20", "qte": None}]
+    app.run()
+    assert not app.exception, [e.value for e in app.exception]
+    assert [ligne["code_ouv"]
+            for ligne in app.session_state["lignes_devis"]] == ["40.20"]
+
+
+def test_un_ouvrage_supprime_de_la_bibliotheque_est_signale(app):
+    """Un devis repris peut porter un ouvrage effacé depuis. Le laisser
+    ferait planter la liste déroulante, qui n'accepte que ses options."""
+    app.session_state["lignes_devis"] = [{"code_ouv": "99.99", "qte": 3.0}]
+    app.run()
+    assert not app.exception, [e.value for e in app.exception]
+    assert any("99.99" in w.value for w in app.warning)

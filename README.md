@@ -136,6 +136,14 @@ ne sait pas rouvrir le `.xlsx` remis au client — c'est un document de
 sortie, et le relire serait de la rétro-ingénierie sur une mise en
 page.
 
+Le tableau montre les ouvrages **en toutes lettres** — `40.20 · Enduit
+de façade minéral armé, deux couches · 98,64 €/m2` — et non leur code
+seul. Personne ne retient cinquante codes, et un ouvrage confondu ne se
+verrait qu'au chantier ; le prix affiché dans la ligne sert de contrôle
+de vraisemblance au moment même du choix. Ce qui est **stocké** reste le
+code : lui seul survit à un changement de libellé ou de prix. La liste
+complète, avec unités et prix, est dans l'onglet **📚 Bibliothèque**.
+
 Ce qui se reprend, c'est un fichier **`.json`** enregistré à côté :
 bouton *« Enregistrer pour modifier plus tard »* sous le devis, et
 dépôt dans *« 📂 Reprendre un devis »* en haut de l'onglet. Reviennent

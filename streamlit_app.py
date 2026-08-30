@@ -125,6 +125,47 @@ def _libelle_ouvrage(code_ouv, bordereau):
             f"· {ligne['pu_vente']:.2f} €/{ligne['unite_ouv']}")
 
 
+def _code_du_libelle(libelle):
+    """« 40.20 · Étanchéité… · 45,00 €/m2 » -> « 40.20 »."""
+    return libelle.split(" · ", 1)[0]
+
+
+def _lignes_lisibles(lignes, bordereau):
+    """Rend les postes d'un devis prêts pour le tableau, et la liste des
+    ouvrages perdus en route.
+
+    Ce qui est STOCKÉ est un code — court, stable, c'est lui qui part
+    dans le `.json` et qui survit à un changement de libellé. Ce qui est
+    MONTRÉ est le libellé complet : personne ne retient que « 40.20 »
+    est l'étanchéité bicouche, et un devis chiffré sur un code confondu
+    ne se voit qu'au chantier.
+
+    Le libellé est reconstruit à CHAQUE exécution plutôt que conservé :
+    il porte le prix de vente, qui bouge dès qu'on touche la marge ou un
+    taux horaire. Un libellé figé afficherait un prix périmé et, pire,
+    ne correspondrait plus à aucune option de la liste déroulante.
+    """
+    lisibles, perdus = [], []
+    for ligne in lignes:
+        code = ligne.get("code_ouv") or _code_du_libelle(
+            str(ligne.get("ouvrage") or ""))
+        try:
+            qte = float(ligne.get("qte") or 0)
+        except (TypeError, ValueError):
+            qte = 0.0
+        if not code:
+            # Ligne à peine ajoutée, rien encore choisi : elle reste. La
+            # jeter ferait disparaître sous les doigts la ligne qu'on
+            # vient de créer.
+            lisibles.append({"ouvrage": None, "qte": qte})
+        elif code in bordereau:
+            lisibles.append({"ouvrage": _libelle_ouvrage(code, bordereau),
+                              "qte": qte})
+        else:
+            perdus.append(code)
+    return lisibles, perdus
+
+
 def _euro(montant):
     """1234.5 -> '1.234,50 €' (convention belge)."""
     return f"{montant:,.2f}".replace(",", " ").replace(".", ",").replace(" ", ".") + " €"
@@ -761,6 +802,8 @@ _DEVIS_EXEMPLE = {
     "tva_devis": 0.06,
     "lignes_devis": [{"code_ouv": "40.20", "qte": 22.0},
                       {"code_ouv": "40.30", "qte": 22.0}],
+    # Les postes sont rangés par code et affichés par libellé : voir
+    # _lignes_lisibles(). L'exemple est donc écrit en codes.
 }
 
 
@@ -848,25 +891,48 @@ with onglet_devis:
         )
 
     st.subheader("Postes")
+    lisibles, perdus = _lignes_lisibles(st.session_state.lignes_devis, b)
+    for code in perdus:
+        st.warning(f"L'ouvrage « {code} » n'existe plus dans la "
+                    "bibliothèque : poste retiré du devis.", icon="⚠️")
 
+    # `options` en toutes lettres, pas en codes : la liste déroulante d'une
+    # colonne n'accepte pas de `format_func`, contrairement aux selectbox du
+    # reste de l'app. Montrer « 40.20 » demanderait de connaître par cœur une
+    # cinquantaine de codes — et une erreur de choix ne se verrait qu'au
+    # chantier. Le libellé porte aussi le prix unitaire : il sert de contrôle
+    # de vraisemblance au moment même où on choisit.
     edite = st.data_editor(
-        st.session_state.lignes_devis,
+        lisibles,
         num_rows="dynamic",
         width="stretch",
         column_config={
-            "code_ouv": st.column_config.SelectboxColumn(
-                "Ouvrage", options=sorted(b), required=True, width="large"),
+            "ouvrage": st.column_config.SelectboxColumn(
+                "Ouvrage", options=[_libelle_ouvrage(c, b) for c in sorted(b)],
+                required=True, width="large"),
             "qte": st.column_config.NumberColumn(
                 "Quantité", min_value=0.0, step=0.5, format="%.2f"),
         },
         key="editeur_devis",
     )
-    st.session_state.lignes_devis = edite
+    st.caption("Onglet **📚 Bibliothèque** : la liste complète des ouvrages, "
+                "leur code, leur unité et leur prix.")
+
+    # Rangé en codes : un libellé porte le prix du jour, un code non. On
+    # garde TOUTES les lignes, y compris celles en cours de saisie — filtrer
+    # ici effacerait la ligne dont la quantité n'est pas encore tapée à la
+    # première réexécution venue.
+    st.session_state.lignes_devis = [
+        {"code_ouv": (_code_du_libelle(ligne["ouvrage"])
+                       if ligne.get("ouvrage") else None),
+          "qte": ligne.get("qte")}
+        for ligne in edite
+    ]
 
     lignes = [
-        (ligne["code_ouv"], float(ligne["qte"]))
+        (_code_du_libelle(ligne["ouvrage"]), float(ligne["qte"]))
         for ligne in edite
-        if ligne.get("code_ouv") and ligne.get("qte")
+        if ligne.get("ouvrage") and ligne.get("qte")
     ]
 
     if lignes:
