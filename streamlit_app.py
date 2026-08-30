@@ -936,45 +936,8 @@ with onglet_devis:
         },
         key="editeur_devis",
     )
-    st.caption(
-        "Onglet **📚 Bibliothèque** : la liste complète des ouvrages, leur "
-        "code, leur unité et leur prix. Pour retirer un poste : le cocher "
-        "dans le tableau puis la corbeille — ou le bouton ci-dessous, plus "
-        "sûr au doigt."
-    )
-
-    # Retirer un poste sans passer par la corbeille du tableau. Celle-ci
-    # marche, mais elle demande de cocher une case de quelques pixels puis
-    # de viser une icône qui n'apparaît qu'au survol : sur un téléphone,
-    # c'est le geste qui rate. Même parade que dans l'atelier — choisir,
-    # puis appuyer.
-    if edite:
-        # La valeur d'un widget à clé survit à la réexécution : après un
-        # retrait, l'indice mémorisé peut désigner une ligne qui n'existe
-        # plus. À remettre dans les bornes AVANT d'instancier le widget.
-        if st.session_state.get("devis_retirer", 0) >= len(edite):
-            st.session_state.devis_retirer = 0
-        col_quoi, col_ret = st.columns([3, 1])
-        col_quoi.selectbox(
-            "Poste à retirer", range(len(edite)),
-            format_func=lambda i: (
-                f"{edite[i].get('ouvrage') or '— ligne vide —'}"
-                f" · {edite[i].get('qte') or 0:.2f}"),
-            key="devis_retirer", label_visibility="collapsed")
-        col_ret.write("")
-        if col_ret.button("🗑 Retirer", width="stretch", key="devis_retirer_ok"):
-            garde = [ligne for i, ligne in enumerate(edite)
-                      if i != st.session_state.devis_retirer]
-            st.session_state.lignes_devis = [
-                {"code_ouv": (_code_du_libelle(ligne["ouvrage"])
-                               if ligne.get("ouvrage") else None),
-                  "qte": ligne.get("qte")}
-                for ligne in garde]
-            # L'éditeur garde ses retraits par NUMÉRO de ligne : les
-            # laisser en place les rejouerait sur des lignes qui ont
-            # glissé d'un cran.
-            st.session_state.pop("editeur_devis", None)
-            st.rerun()
+    st.caption("Onglet **📚 Bibliothèque** : la liste complète des ouvrages, "
+                "leur code, leur unité et leur prix.")
 
     # Rangé en codes : un libellé porte le prix du jour, un code non. On
     # garde TOUTES les lignes, y compris celles en cours de saisie — filtrer

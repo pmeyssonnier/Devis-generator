@@ -136,12 +136,6 @@ ne sait pas rouvrir le `.xlsx` remis au client — c'est un document de
 sortie, et le relire serait de la rétro-ingénierie sur une mise en
 page.
 
-**Retirer un poste** : le bouton *« 🗑 Retirer »* sous le tableau, après
-avoir choisi la ligne dans la liste. La corbeille du tableau lui-même
-fonctionne aussi — cocher la ligne, puis l'icône — mais elle demande de
-viser une case de quelques pixels et une icône qui n'apparaît qu'au
-survol : au doigt, c'est le geste qui rate.
-
 Le tableau montre les ouvrages **en toutes lettres** — `40.20 · Enduit
 de façade minéral armé, deux couches · 98,64 €/m2` — et non leur code
 seul. Personne ne retient cinquante codes, et un ouvrage confondu ne se
@@ -788,7 +782,7 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-193 tests. Ceux de la chaîne Excel se skippent sans openpyxl, ceux de
+191 tests. Ceux de la chaîne Excel se skippent sans openpyxl, ceux de
 l'interface sans streamlit. L'écriture GitHub est testée avec un
 dépôt simulé — la suite ne touche jamais au réseau.
 
