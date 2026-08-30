@@ -264,7 +264,8 @@ def lire_metre_complet(chemin, feuilles=None, colonnes=None):
             numero = row[0].row
             designation = _valeur(row, cols.get("designation")) or ""
             unite = _valeur(row, cols.get("unite")) or ""
-            qte = _valeur(row, cols.get("quantite"))
+            col_qte = cols.get("quantite")
+            qte = _valeur(row, col_qte)
 
             # Une ligne sans quantité NI désignation NI unité n'est
             # probablement pas un poste : un titre, une référence, un
@@ -273,8 +274,16 @@ def lire_metre_complet(chemin, feuilles=None, colonnes=None):
 
             # ── Quantité calculée par formule ────────────────────
             if isinstance(qte, str) and qte.lstrip().startswith("="):
-                cache = (ws_valeurs.cell(numero, COL_QUANTITE).value
-                          if ws_valeurs is not None else None)
+                # Dans la colonne DÉTECTÉE, pas dans celle d'origine :
+                # la première lecture trouve la quantité en G, la
+                # seconde allait chercher son cache en F — vide. Le
+                # poste ressortait « quantité illisible » alors que la
+                # valeur était là, et un poste sans prix rend l'offre
+                # irrégulière (AR 18/04/2017, art. 76). Les deux défauts
+                # se testaient séparément et passaient : il fallait les
+                # combiner pour le voir.
+                cache = (ws_valeurs.cell(numero, col_qte).value
+                          if ws_valeurs is not None and col_qte else None)
                 if isinstance(cache, (int, float)):
                     anomalies.append(_anomalie(
                         "quantite_formule", code, numero,

@@ -1655,3 +1655,177 @@ def test_un_fichier_qui_nest_pas_un_devis_est_refuse():
         devis_json.lire(b'["40.20"]', {"40.20"})
     with pytest.raises(ValueError):
         devis_json.lire(b'{"objet": "x"}', {"40.20"})
+
+
+# ── 21. Combinaisons — ce que les tests isolés laissent passer ──────────────
+#
+# Deux défauts trouvés par un audit du dépôt, tous deux invisibles aux
+# tests pris un à un : chacune des deux moitiés passait seule.
+
+def _cacher_formule(chemin, cellule, valeur):
+    """Écrit la valeur en cache d'une formule, comme le fait Excel.
+
+    openpyxl n'en écrit jamais : un classeur qu'il produit ne porte que
+    la formule. Or c'est le cache qui distingue un métré déjà ouvert
+    dans Excel — donc chiffrable — d'un métré qui ne l'a jamais été. Il
+    faut donc l'ajouter dans le XML, à la main, pour tester ce chemin.
+    """
+    import re  # noqa: PLC0415
+    import shutil  # noqa: PLC0415
+    import zipfile  # noqa: PLC0415
+
+    tampon = str(chemin) + ".tmp"
+    with zipfile.ZipFile(str(chemin)) as source, \
+            zipfile.ZipFile(tampon, "w") as sortie:
+        for item in source.infolist():
+            donnees = source.read(item.filename)
+            if item.filename.startswith("xl/worksheets/sheet"):
+                donnees = re.sub(
+                    r'(<c r="%s"[^>]*>)(<f>[^<]*</f>)' % cellule,
+                    r'\1\2<v>%s</v>' % valeur,
+                    donnees.decode("utf-8")).encode("utf-8")
+            sortie.writestr(item, donnees)
+    shutil.move(tampon, str(chemin))
+
+
+def test_une_quantite_en_formule_se_lit_dans_la_colonne_detectee(
+        tmp_path, openpyxl_dispo):
+    """Le défaut P0 : la première lecture trouvait la quantité en G, la
+    seconde allait chercher son cache dans la colonne F d'origine. Le
+    poste ressortait « quantité illisible » alors que la valeur était
+    là — et un poste sans prix rend l'offre irrégulière (art. 76).
+
+    Colonne déplacée seule : testé, ça passait. Formule seule : testé,
+    ça passait. Les deux ensemble : le poste disparaissait."""
+    from chiffrage.metre_io import lire_metre_complet
+
+    wb = _classeur([
+        ["COMMUNE DE WEMMEL — MARCHÉ 2026/114"],
+        [],
+        ["Poste", "Description des travaux", "", "", "", "Unité",
+         "Quantité", "Prix unitaire", "Total"],
+        ["1.01.10", "Démolition de cloisons légères", "", "", "", "m2", 38,
+         None, None],
+        ["1.01.20", "Enduit de façade minéral armé", "", "", "", "m2",
+         "=12.5*3", None, None],
+        ["2.03.05", "Peinture des plafonds intérieurs", "", "", "", "m2", 210,
+         None, None],
+    ], titre="Inventaire")
+    chemin = tmp_path / "FORMULE.xlsx"
+    wb.save(str(chemin))
+    _cacher_formule(chemin, "G5", 37.5)
+
+    lecture = lire_metre_complet(str(chemin))
+    assert lecture["colonnes"]["Inventaire"]["quantite"] == 7, (
+        "la quantité n'est pas détectée en G : le test ne prouve rien")
+
+    postes = {p["code"]: p for p in lecture["postes"]}
+    assert "1.01.20" in postes, "le poste en formule a été perdu"
+    assert postes["1.01.20"]["quantite"] == pytest.approx(37.5)
+    assert [a["genre"] for a in lecture["anomalies"]] == ["quantite_formule"]
+
+
+def test_aucune_colonne_assez_remplie_ne_fait_pas_planter_la_detection(
+        openpyxl_dispo):
+    """Le défaut P1 : des colonnes numériques pouvaient exister sans
+    qu'aucune n'atteigne le seuil de remplissage. `min()` recevait une
+    séquence vide et levait — le dépôt du métré plantait au lieu de
+    rendre une détection incomplète, que l'interface sait présenter."""
+    from chiffrage.detection_colonnes import detecter
+
+    lignes = [[None, f"03.{i:02d}", "Désignation du poste"] for i in range(10)]
+    for ligne in lignes[:3]:                 # trois nombres épars sur dix
+        ligne += ["", 12.5]
+    detection = detecter(_classeur(lignes).active)
+
+    assert "quantite" not in detection["champs"], (
+        "trois valeurs sur dix postes ne font pas une colonne de quantité")
+    assert "quantite" in detection["manquants"]
+
+
+@pytest.fixture
+def metre_de_torture(tmp_path, openpyxl_dispo):
+    """Les quatre pièges d'un coup — plusieurs feuilles, colonnes
+    déplacées, quantité en formule avec cache, récapitulatif reprenant
+    les mêmes codes."""
+    from openpyxl import Workbook  # noqa: PLC0415
+
+    entete = ["Poste", "Description des travaux", "", "", "", "Unité",
+               "Quantité", "Prix unitaire", "Total"]
+    lot_1 = [("1.01.10", "Démolition de cloisons légères", "m2", 38),
+              ("1.01.20", "Enduit de façade minéral armé", "m2", "=12.5*3"),
+              ("1.02.05", "Peinture des plafonds intérieurs", "m2", 210)]
+    lot_2 = [("2.01.10", "Plafonnage sur maçonnerie", "m2", 74),
+              ("2.01.20", "Cimentage de mur de cave", "m2", 26),
+              ("2.02.30", "Pose de faïence murale", "m2", 18)]
+
+    def feuille(ws, titre, postes):
+        ws.title = titre
+        ws.append(["COMMUNE DE WEMMEL — MARCHÉ 2026/114"])
+        ws.append([])
+        ws.append(list(entete))
+        for code, libelle, unite, qte in postes:
+            ws.append([code, libelle, "", "", "", unite, qte, None, None])
+
+    wb = Workbook()
+    feuille(wb.active, "Lot 01", lot_1)
+    feuille(wb.create_sheet(), "Lot 02", lot_2)
+    feuille(wb.create_sheet(), "Récapitulatif", lot_1)
+
+    chemin = tmp_path / "TORTURE.xlsx"
+    wb.save(str(chemin))
+    # La formule est en G5 sur « Lot 01 » comme sur le récapitulatif :
+    # Excel en aurait mis le cache dans les deux.
+    _cacher_formule(chemin, "G5", 37.5)
+    return chemin
+
+
+def test_le_classeur_de_torture_se_lit_en_entier(metre_de_torture):
+    """Les six postes des deux lots, la formule comprise ; et le
+    récapitulatif signalé comme doublon plutôt que compté deux fois."""
+    from chiffrage.metre_io import lire_metre_complet
+
+    lecture = lire_metre_complet(str(metre_de_torture))
+    postes = {p["code"]: p for p in lecture["postes"]}
+    genres = [a["genre"] for a in lecture["anomalies"]]
+
+    assert len(postes) == 6, "des postes se sont perdus en chemin"
+    assert postes["1.01.20"]["quantite"] == pytest.approx(37.5)
+    assert postes["1.01.20"]["feuille"] == "Lot 01"
+    assert postes["2.02.30"]["feuille"] == "Lot 02"
+
+    # Le récapitulatif reprend les trois codes du lot 1 : trois doublons,
+    # et aucune quantité ajoutée à celles déjà lues.
+    assert genres.count("code_duplique") == 3
+    assert genres.count("quantite_formule") >= 1
+    assert all(c["feuille"] == "Lot 01"
+                for code, c in postes.items() if code.startswith("1."))
+
+
+def test_le_prix_va_dans_la_colonne_detectee_de_la_bonne_feuille(
+        metre_de_torture, tmp_path):
+    """Écrire dans la colonne d'origine, ou sur la première feuille,
+    rendrait au pouvoir adjudicateur un classeur faux sans qu'aucune
+    erreur ne soit levée."""
+    from openpyxl import load_workbook  # noqa: PLC0415
+
+    from chiffrage.metre_io import remplir_metre
+
+    sortie = tmp_path / "offre.xlsx"
+    rapport = remplir_metre(
+        str(metre_de_torture), str(sortie),
+        feuilles=["Lot 01", "Lot 02"],
+        mapping={"1.01.10": "20.20", "1.01.20": "40.20",
+                  "2.01.10": "60.20"})
+    assert len(rapport["chiffres"]) == 3
+
+    wb = load_workbook(str(sortie))
+    for nom, attendus in (("Lot 01", 2), ("Lot 02", 1)):
+        prix = [c.value for row in wb[nom].iter_rows(min_row=4) for c in row
+                 if c.column == 8 and isinstance(c.value, (int, float))]
+        assert len(prix) == attendus, f"{nom} : prix mal placés"
+    # La quantité reste intacte, et rien n'est écrit dans la colonne
+    # que la disposition par défaut aurait visée.
+    ws = wb["Lot 01"]
+    assert ws.cell(4, 7).value == 38
+    assert all(ws.cell(ligne, 6).value in (None, "m2") for ligne in (4, 5, 6))
