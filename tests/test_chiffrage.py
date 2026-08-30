@@ -1581,3 +1581,77 @@ def test_commit_d_une_table_n_additionne_rien():
     assert vu["chemin"] == "chiffrage/data/ressources.json"
     assert vu["sha"] == "sha-distant"
     assert "ressources" in vu["message"]
+
+
+# ── 12. Reprendre un devis enregistré ───────────────────────────────────────
+# Le fichier relu ici a pu être édité à la main ou produit par une version
+# antérieure de la bibliothèque. Ces tests vérifient surtout qu'une donnée
+# douteuse est ÉCARTÉE ET SIGNALÉE, jamais devinée ni laissée passer.
+
+def _relire(charge, codes=("40.20", "40.30")):
+    from chiffrage import devis_json
+
+    return devis_json.lire(json.dumps(charge).encode("utf-8"), set(codes))
+
+
+def test_un_devis_fait_laller_retour_sans_rien_perdre():
+    from chiffrage import devis_json
+
+    texte = devis_json.serialiser(
+        "Façade arrière", "2026-042", "Rue X 1", "M. Dupont\n1030 Bruxelles",
+        0.06, [("40.20", 22.0), ("40.30", 8.5)])
+    devis, anomalies = devis_json.lire(texte, {"40.20", "40.30"})
+    assert anomalies == []
+    assert devis["objet"] == "Façade arrière"
+    assert devis["client"].endswith("1030 Bruxelles")
+    assert devis["tva"] == 0.06
+    assert devis["lignes"] == [{"code_ouv": "40.20", "qte": 22.0},
+                                {"code_ouv": "40.30", "qte": 8.5}]
+
+
+def test_un_ouvrage_disparu_de_la_bibliotheque_est_ecarte_et_signale():
+    """Le laisser passer ferait planter le tableau d'édition, dont la
+    liste déroulante n'accepte que des codes existants."""
+    devis, anomalies = _relire({
+        "lignes": [{"code_ouv": "40.20", "qte": 3},
+                    {"code_ouv": "99.99", "qte": 3}]})
+    assert [ligne["code_ouv"] for ligne in devis["lignes"]] == ["40.20"]
+    assert any("99.99" in a for a in anomalies)
+
+
+def test_une_quantite_negative_est_ecartee():
+    """Sans ce contrôle, le devis afficherait un montant négatif sans
+    que rien ne le signale."""
+    devis, anomalies = _relire({"lignes": [{"code_ouv": "40.20", "qte": -5}]})
+    assert devis["lignes"] == []
+    assert any("négative" in a for a in anomalies)
+
+
+def test_une_quantite_illisible_est_ecartee():
+    devis, anomalies = _relire({
+        "lignes": [{"code_ouv": "40.20", "qte": "beaucoup"}]})
+    assert devis["lignes"] == []
+    assert anomalies
+
+
+def test_un_taux_de_tva_inattendu_retombe_sur_vingt_et_un():
+    """Sous-facturer la TVA se paie au contrôle ; la sur-facturer se
+    corrige par une note de crédit. Le repli va donc vers le haut."""
+    devis, anomalies = _relire({"tva": 0.12, "lignes": []})
+    assert devis["tva"] == 0.21
+    assert anomalies
+
+
+def test_un_devis_sans_tva_ne_declenche_pas_davertissement():
+    devis, anomalies = _relire({"lignes": []})
+    assert devis["tva"] == 0.21
+    assert anomalies == []
+
+
+def test_un_fichier_qui_nest_pas_un_devis_est_refuse():
+    from chiffrage import devis_json
+
+    with pytest.raises(ValueError):
+        devis_json.lire(b'["40.20"]', {"40.20"})
+    with pytest.raises(ValueError):
+        devis_json.lire(b'{"objet": "x"}', {"40.20"})

@@ -33,6 +33,8 @@ from chiffrage.bibliotheque import (
     OUVRAGES_A_VALIDER,
     PARAMS,
 )
+from chiffrage.devis_json import lire as lire_devis
+from chiffrage.devis_json import serialiser as serialiser_devis
 from chiffrage.devis_xlsx import exporter_devis
 from chiffrage.controle_prix import analyser
 from chiffrage.detection_colonnes import CHAMPS, CHAMPS_REQUIS
@@ -702,6 +704,8 @@ def _repondre_a_un_metre(params):
             )
             repris = st.file_uploader("Reprendre une correspondance (.json)",
                                         type=["json"], key="up_map")
+            for anomalie in st.session_state.get("mapping_anomalies", []):
+                st.warning(anomalie, icon="⚠️")
             # BOUCLE DE RERUN À NE PAS RÉINTRODUIRE.
             # `repris` reste non-None à CHAQUE réexécution du script tant
             # que le fichier est déposé : un st.rerun() inconditionnel
@@ -717,12 +721,13 @@ def _repondre_a_un_metre(params):
                 try:
                     charge = json.loads(repris.getvalue().decode("utf-8"))
                     inconnus = set(charge.values()) - set(b) - {None}
-                    if inconnus:
-                        st.warning(
-                            "Codes d'ouvrage inconnus, ignorés : "
-                            + ", ".join(sorted(inconnus)),
-                            icon="⚠️",
-                        )
+                    # Rangé dans l'état plutôt qu'affiché : le st.rerun()
+                    # plus bas effaçait ce message avant qu'il soit lu, et
+                    # la correspondance repartait amputée sans que rien ne
+                    # le dise.
+                    st.session_state.mapping_anomalies = (
+                        ["Codes d'ouvrage inconnus, ignorés : "
+                          + ", ".join(sorted(inconnus))] if inconnus else [])
                     st.session_state.mapping = {
                         poste: ouv for poste, ouv in charge.items()
                         if ouv in b or ouv is None
@@ -744,23 +749,95 @@ with onglet_metre:
 #  2. Devis client
 # ══════════════════════════════════════════════════
 
+# Valeurs d'exemple, pas valeurs par défaut utiles : elles montrent la forme
+# attendue de chaque champ et sont faites pour être écrasées. Elles passent par
+# session_state — et non par l'argument `value=` des widgets — parce que
+# reprendre un devis doit pouvoir les remplacer, ce qu'un `value=` empêcherait.
+_DEVIS_EXEMPLE = {
+    "devis_objet": "Rénovation de la façade arrière",
+    "devis_reference": f"{date.today():%Y}-042",
+    "devis_chantier": "Avenue Ernest Renan 62, 1030 Schaerbeek",
+    "devis_client": "M. et Mme Dupont\nRue de l'Église 12\n1030 Schaerbeek",
+    "tva_devis": 0.06,
+    "lignes_devis": [{"code_ouv": "40.20", "qte": 22.0},
+                      {"code_ouv": "40.30", "qte": 22.0}],
+}
+
+
+def _reprendre_un_devis(codes_connus):
+    """Recharge un devis enregistré dans les champs de l'onglet.
+
+    À appeler AVANT que les widgets concernés soient créés : Streamlit
+    refuse qu'on écrive dans l'état d'un widget déjà instancié dans la
+    même exécution.
+    """
+    depose = st.file_uploader("Reprendre un devis enregistré (.json)",
+                               type=["json"], key="up_devis")
+    # Même piège que pour la correspondance de métré : `depose` reste
+    # non-None à chaque réexécution tant que le fichier est là. Un
+    # st.rerun() inconditionnel bouclerait sans fin. On ne traite le
+    # dépôt qu'une fois, repéré par l'empreinte de son contenu.
+    deja_lu = st.session_state.get("devis_importe")
+    empreinte = (hashlib.sha256(depose.getvalue()).hexdigest()
+                  if depose is not None else None)
+    if depose is None or empreinte == deja_lu:
+        return
+    st.session_state.devis_importe = empreinte
+    try:
+        charge, anomalies = lire_devis(depose.getvalue(), codes_connus)
+    except Exception as err:
+        # Marqué lu malgré l'échec : sans ça, un fichier illisible
+        # reposerait la question à chaque rerun. Pas de rerun sur ce
+        # chemin, donc le message peut s'afficher directement.
+        st.session_state.pop("devis_anomalies", None)
+        st.error(f"Fichier illisible : {err}", icon="🛑")
+        return
+    # Rangé dans l'état, PAS affiché ici : le st.rerun() qui suit
+    # rejouerait le script depuis le début et effacerait l'avertissement
+    # avant que quiconque l'ait lu. C'est l'appelant qui l'affiche.
+    st.session_state.devis_anomalies = anomalies
+    for champ in ("objet", "reference", "chantier", "client"):
+        st.session_state[f"devis_{champ}"] = charge[champ]
+    st.session_state.tva_devis = charge["tva"]
+    st.session_state.lignes_devis = charge["lignes"]
+    # L'éditeur garde ses modifications sous sa propre clé et les
+    # REAPPLIQUE aux nouvelles données au rerun : sans cet oubli, les
+    # lignes ajoutées à la main au devis précédent reviendraient se
+    # coller au devis qu'on vient de charger.
+    st.session_state.pop("editeur_devis", None)
+    st.rerun()
+
+
 with onglet_devis:
     st.header("Devis client")
     _avertissement_calibration()
 
     b = _bordereau(params)
+    for cle, valeur in _DEVIS_EXEMPLE.items():
+        # deepcopy : la liste de postes de l'exemple est partagée par le
+        # module. La poser telle quelle dans l'état ferait éditer l'exemple
+        # lui-même, et le devis suivant démarrerait sur les postes du
+        # précédent.
+        st.session_state.setdefault(cle, copy.deepcopy(valeur))
+
+    with st.expander("📂 Reprendre un devis"):
+        _reprendre_un_devis(b)
+        for anomalie in st.session_state.get("devis_anomalies", []):
+            st.warning(anomalie, icon="⚠️")
+        st.caption(
+            "Le fichier `.json` téléchargé en bas de cet onglet se redépose "
+            "ici : en-tête, TVA et postes reviennent tels quels. Les **prix "
+            "sont recalculés** aux valeurs actuelles de la bibliothèque — un "
+            "devis rouvert est un devis à réémettre, pas une archive."
+        )
+
     col_g, col_d = st.columns([2, 1])
 
     with col_g:
-        objet = st.text_input("Objet", "Rénovation de la façade arrière")
-        reference = st.text_input("Référence", f"{date.today():%Y}-042")
-        chantier = st.text_input("Chantier",
-                                   "Avenue Ernest Renan 62, 1030 Schaerbeek")
-        client = st.text_area(
-            "Client",
-            "M. et Mme Dupont\nRue de l'Église 12\n1030 Schaerbeek",
-            height=90,
-        )
+        objet = st.text_input("Objet", key="devis_objet")
+        reference = st.text_input("Référence", key="devis_reference")
+        chantier = st.text_input("Chantier", key="devis_chantier")
+        client = st.text_area("Client", height=90, key="devis_client")
     with col_d:
         tva_devis = st.radio("TVA", [0.06, 0.21],
                               format_func=lambda t: f"{t * 100:.0f} %",
@@ -771,11 +848,6 @@ with onglet_devis:
         )
 
     st.subheader("Postes")
-    if "lignes_devis" not in st.session_state:
-        st.session_state.lignes_devis = [
-            {"code_ouv": "40.20", "qte": 22.0},
-            {"code_ouv": "40.30", "qte": 22.0},
-        ]
 
     edite = st.data_editor(
         st.session_state.lignes_devis,
@@ -826,12 +898,23 @@ with onglet_devis:
                             reference=reference)
             octets = cible.read_bytes()
 
-        st.download_button(
+        col_xlsx, col_json = st.columns(2)
+        col_xlsx.download_button(
             "⬇️ Télécharger le devis", octets,
             file_name=f"DEVIS_{reference}_{datetime.now():%Y%m%d_%H%M}.xlsx",
             mime="application/vnd.openxmlformats-officedocument."
                   "spreadsheetml.sheet",
-            type="primary",
+            type="primary", width="stretch",
+        )
+        # Le .xlsx part au client, le .json revient ici. Sans lui, corriger
+        # un devis de la semaine passée voulait dire tout ré-encoder — et un
+        # simple rafraîchissement de la page suffisait à tout perdre.
+        col_json.download_button(
+            "💾 Enregistrer pour modifier plus tard (.json)",
+            serialiser_devis(objet, reference, chantier, client, tva_devis,
+                              lignes),
+            file_name=f"DEVIS_{reference}.json",
+            mime="application/json", width="stretch",
         )
     else:
         st.info("Ajoute au moins un poste.", icon="💡")

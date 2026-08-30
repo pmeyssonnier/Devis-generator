@@ -525,3 +525,94 @@ def test_la_configuration_daffichage_est_bien_suivie_par_git():
         ["git", "check-ignore", "-q", ".streamlit/config.toml"],
         cwd=APP.parent, capture_output=True)
     assert ignore.returncode != 0, ".streamlit/config.toml est ignoré par git"
+
+
+# ── Reprendre un devis ──────────────────────────────────────────────────────
+
+def _deposer_devis(app, charge):
+    import json
+
+    depot = [u for u in app.file_uploader if u.key == "up_devis"]
+    assert depot, "déposeur de devis absent"
+    depot[0].set_value(("DEVIS.json", json.dumps(charge).encode(),
+                         "application/json")).run()
+    return app
+
+
+def test_un_devis_enregistre_se_recharge_dans_les_champs(app):
+    _deposer_devis(app, {
+        "version": 1, "objet": "Toiture arrière", "reference": "2026-007",
+        "chantier": "Rue Haute 3", "client": "SPRL Test", "tva": 0.21,
+        "lignes": [{"code_ouv": "40.20", "qte": 12.5}]})
+    assert not app.exception, [e.value for e in app.exception]
+    assert app.session_state["devis_objet"] == "Toiture arrière"
+    assert app.session_state["devis_reference"] == "2026-007"
+    assert app.session_state["tva_devis"] == 0.21
+    assert app.session_state["lignes_devis"] == [{"code_ouv": "40.20",
+                                                   "qte": 12.5}]
+    # Les postes d'exemple du devis précédent ne doivent pas survivre.
+    assert len(app.session_state["lignes_devis"]) == 1
+
+
+def test_le_depot_dun_devis_ne_relance_pas_le_script_sans_fin(app):
+    """Même piège que la correspondance de métré : le fichier reste
+    déposé à chaque réexécution."""
+    _deposer_devis(app, {"objet": "X", "tva": 0.06, "lignes": []})
+    assert app.session_state["devis_importe"]
+    for _ in range(3):
+        app.run()
+        assert not app.exception, [e.value for e in app.exception]
+    assert app.session_state["devis_objet"] == "X"
+
+
+def test_les_modifications_du_devis_precedent_ne_suivent_pas(app):
+    """`st.data_editor` garde ses ajouts sous sa propre clé et les
+    réapplique aux données suivantes : sans oubli explicite, les lignes
+    tapées à la main dans le devis précédent viendraient se coller au
+    devis qu'on vient de charger."""
+    app.session_state["editeur_devis"] = {
+        "edited_rows": {}, "added_rows": [{"code_ouv": "40.30", "qte": 99.0}],
+        "deleted_rows": []}
+    _deposer_devis(app, {"objet": "Neuf", "tva": 0.06,
+                          "lignes": [{"code_ouv": "40.20", "qte": 1.0}]})
+    assert not app.exception, [e.value for e in app.exception]
+    assert all(ligne["qte"] != 99.0
+                for ligne in app.session_state["lignes_devis"])
+
+
+def test_un_devis_illisible_ne_plante_pas_lapp(app):
+    depot = [u for u in app.file_uploader if u.key == "up_devis"]
+    depot[0].set_value(("DEVIS.json", b"pas du json", "application/json")).run()
+    assert not app.exception, [e.value for e in app.exception]
+    assert any("illisible" in e.value for e in app.error)
+
+
+def test_un_ouvrage_inconnu_est_signale_a_lecran(app):
+    _deposer_devis(app, {"objet": "X", "tva": 0.06,
+                          "lignes": [{"code_ouv": "99.99", "qte": 1.0}]})
+    assert any("99.99" in w.value for w in app.warning)
+
+
+def test_le_devis_se_telecharge_aussi_en_json(app):
+    labels = [d.label for d in app.get("download_button")]
+    assert any(".json" in label and "modifier" in label for label in labels)
+
+
+def test_un_code_inconnu_dans_une_correspondance_reste_affiche(app, tmp_path):
+    """L'avertissement était posé juste avant un `st.rerun()`, qui
+    rejoue le script depuis le début : il disparaissait de l'écran sans
+    jamais avoir été lu, et la correspondance repartait amputée en
+    silence."""
+    import json
+
+    from chiffrage.gen_metre import generer_metre
+
+    metre = tmp_path / "M.xlsx"
+    generer_metre(str(metre))
+    app.file_uploader[0].set_value((metre.name, metre.read_bytes(),
+                                     XLSX)).run()
+    depot = [u for u in app.file_uploader if u.key == "up_map"]
+    depot[0].set_value(("MAPPING.json",
+                         json.dumps({"01.01": "99.99"}).encode(),
+                         "application/json")).run()
+    assert any("99.99" in w.value for w in app.warning)

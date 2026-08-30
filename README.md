@@ -128,6 +128,33 @@ surcouche est globale au processus, et un serveur Streamlit sert tous
 ses visiteurs depuis un seul processus), et il **ne survit pas au
 redémarrage** — sauf à le commiter, voir juste en dessous.
 
+### Reprendre un devis pour le modifier
+
+L'onglet **Devis client** sert à **encoder** un devis : en-tête, TVA,
+puis les lignes (ouvrage, quantité) choisies dans la bibliothèque. Il
+ne sait pas rouvrir le `.xlsx` remis au client — c'est un document de
+sortie, et le relire serait de la rétro-ingénierie sur une mise en
+page.
+
+Ce qui se reprend, c'est un fichier **`.json`** enregistré à côté :
+bouton *« Enregistrer pour modifier plus tard »* sous le devis, et
+dépôt dans *« 📂 Reprendre un devis »* en haut de l'onglet. Reviennent
+l'objet, la référence, le chantier, le client, le taux de TVA et les
+postes. C'est aussi le seul filet contre le rafraîchissement de la
+page, qui vide la session.
+
+**Les prix ne sont pas dans le fichier.** Ils sont recalculés à la
+relecture, aux valeurs actuelles de la bibliothèque : un devis rouvert
+six mois plus tard est un devis à **réémettre**, pas une archive. Pour
+figer un montant, c'est le `.xlsx` qui fait foi.
+
+Ce qui ne franchit pas la relecture est **écarté et affiché**, jamais
+deviné : un ouvrage supprimé de la bibliothèque depuis (il ferait
+planter la liste déroulante du tableau), une quantité illisible ou
+négative (elle produirait un montant négatif sans rien dire), un taux
+de TVA inattendu (repli sur 21 % — sous-facturer la TVA se paie au
+contrôle, la sur-facturer se corrige par une note de crédit).
+
 ### Régler l'entreprise et les coefficients
 
 L'onglet **⚙️ Paramètres** porte la raison sociale, l'adresse, le
@@ -291,6 +318,7 @@ exporter_devis(d, "devis_2026-042.xlsx",
 | `moteur.py` | calcul du bordereau, devis, fiche de prix, calibration, contrôle de cohérence | — |
 | `export_xlsx.py` | bibliothèque → Excel 6 onglets, **avec vraies formules** | openpyxl |
 | `devis_xlsx.py` | devis client prêt à envoyer : en-tête, postes par lot, TVA, conditions, signature | openpyxl |
+| `devis_json.py` | enregistrer un devis (saisie, pas prix) et le relire pour le modifier | — |
 | `suggestion.py` | appariement poste imposé → ouvrage, à partir du libellé | — |
 | `lexique.py` | vocabulaire de CSC → vocabulaire de la bibliothèque, facette d'opération | — |
 | `parametres.py` | identité de l'entreprise et coefficients de vente, réglables depuis l'app | — |
