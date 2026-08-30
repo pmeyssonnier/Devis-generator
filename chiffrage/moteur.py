@@ -18,6 +18,7 @@ from .bibliotheque import (
     LOTS,
     METRES_HISTO,
     OUVRAGES,
+    OUVRAGES_A_VALIDER,
     OUVRAGES_PAR_CODE,
     PARAMS,
     RESSOURCES_PAR_CODE,
@@ -56,6 +57,11 @@ def tables_courantes(tables=None):
         "composition": COMPOSITION,
         "lots": LOTS,
         "metres_histo": METRES_HISTO,
+        # Aucun calcul ne s'en sert : c'est la liste des rendements
+        # jamais confrontés au réel. Elle voyage avec les autres tables
+        # parce qu'une séance de calibration la modifie — on lève le
+        # doute sur un rendement au moment même où on le corrige.
+        "ouvrages_a_valider": OUVRAGES_A_VALIDER,
         "ressources_par_code": RESSOURCES_PAR_CODE,
         "ouvrages_par_code": OUVRAGES_PAR_CODE,
     }

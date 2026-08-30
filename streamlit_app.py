@@ -1090,7 +1090,10 @@ with onglet_biblio:
             "vient de l'expérience du chantier, et pèse la majeure partie "
             "du déboursé. C'est ici que la calibration se joue."
         )
-        a_valider = set(OUVRAGES_A_VALIDER)
+        # La copie de travail, pas la constante du module : le ⚠️ doit
+        # disparaître à l'écran dès qu'on lève le doute, sans attendre le
+        # redéploiement.
+        a_valider = set(tables["ouvrages_a_valider"])
         indices_mo = [
             i for i, c in enumerate(tables["composition"])
             if origine_res[c["code_res"]]["type_res"] == "MO"]
@@ -1122,6 +1125,32 @@ with onglet_biblio:
         ancienne = origine["composition"][choix]["qte_res"]
         if abs(ligne["qte_res"] - ancienne) > 1e-9:
             st.caption(f"Corrigé : {ancienne:.3f} → **{ligne['qte_res']:.3f}** h")
+
+        # ── Lever le doute ─────────────────────
+        # Le ⚠️ ne dit pas « prix faux », il dit « rendement jamais
+        # confronté au réel ». Le lever n'est donc pas un réglage
+        # d'affichage : ça enregistre qu'un chantier a eu lieu et que les
+        # heures relevées collent. Le sens inverse existe aussi — un
+        # ouvrage sans ⚠️ n'a pas pour autant été vérifié, et poser le
+        # doute sur celui qui déraille est le début de la calibration.
+        code_courant = ligne["code_ouv"]
+        if code_courant in a_valider:
+            if st.button("✅ Rendement confirmé par un chantier réalisé",
+                          key="corr_rend_valider", width="stretch"):
+                tables["ouvrages_a_valider"] = [
+                    c for c in tables["ouvrages_a_valider"]
+                    if c != code_courant]
+                st.rerun()
+            st.caption(
+                "À cocher **après** avoir relevé les heures réelles sur un "
+                "chantier de cet ouvrage, pas avant : le ⚠️ retiré, plus "
+                "rien ne signalera que ce rendement a été inventé."
+            )
+        elif st.button("⚠️ Remettre ce rendement en doute",
+                        key="corr_rend_douter", width="stretch"):
+            tables["ouvrages_a_valider"] = sorted(
+                set(tables["ouvrages_a_valider"]) | {code_courant})
+            st.rerun()
 
     # ── Créer un ouvrage ───────────────────────
     with st.expander("➕ Créer un ouvrage absent de la bibliothèque"):
@@ -1277,14 +1306,24 @@ with onglet_biblio:
                      if compo_origine.get(cle(c)) != c["qte_res"]]
     ouvrages_neufs = [o for o in tables["ouvrages"]
                        if o["code_ouv"] not in origine["ouvrages_par_code"]]
+    # Une validation ne change aucun prix : elle ne se verrait dans aucune
+    # des comparaisons ci-dessus. Sans cette ligne, lever un doute ne
+    # ferait apparaître aucun bouton d'enregistrement, et le travail serait
+    # perdu au rafraîchissement suivant.
+    modifs_valid = (sorted(tables["ouvrages_a_valider"])
+                     != sorted(origine["ouvrages_a_valider"]))
 
     avant = calibration(params)
     apres = calibration(params, tables=tables)
 
     m1, m2, m3 = st.columns(3)
+    reperes = ([f"+{len(ouvrages_neufs)} ouvrage(s)"] if ouvrages_neufs else [])
+    if modifs_valid:
+        avant_val, apres_val = (len(origine["ouvrages_a_valider"]),
+                                 len(tables["ouvrages_a_valider"]))
+        reperes.append(f"{avant_val} → {apres_val} à valider")
     m1.metric("Valeurs corrigées", len(modifs_res) + len(modifs_compo),
-               f"+{len(ouvrages_neufs)} ouvrage(s)" if ouvrages_neufs else None,
-               delta_color="off")
+               " · ".join(reperes) or None, delta_color="off")
     m2.metric("Écart moyen absolu",
                f"{apres['ecart_moyen_absolu'] * 100:.1f} %",
                f"{(apres['ecart_moyen_absolu'] - avant['ecart_moyen_absolu']) * 100:+.1f} pt"
@@ -1294,7 +1333,7 @@ with onglet_biblio:
                sum(1 for r in apres["lignes"] if abs(r["ecart"]) > 0.15),
                help="Cible : moins de 15 % d'écart sur CHAQUE ligne.")
 
-    if modifs_res or modifs_compo or ouvrages_neufs:
+    if modifs_res or modifs_compo or ouvrages_neufs or modifs_valid:
         st.dataframe(
             [{"Devis": r["devis"], "Objet": r["objet"],
                "Forfait vendu": r["forfait"], "Calculé": r["calcule"],
@@ -1315,6 +1354,9 @@ with onglet_biblio:
             a_ecrire["ressources"] = tables["ressources"]
         if modifs_compo or ouvrages_neufs:
             a_ecrire["composition"] = tables["composition"]
+        if modifs_valid:
+            a_ecrire["ouvrages_a_valider"] = sorted(
+                tables["ouvrages_a_valider"])
         if ouvrages_neufs:
             # Le lot se déduit du code : on ne le réécrit pas dans le
             # fichier, sinon les deux pourraient diverger.

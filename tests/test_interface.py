@@ -685,3 +685,105 @@ def test_un_ouvrage_supprime_de_la_bibliotheque_est_signale(app):
     app.run()
     assert not app.exception, [e.value for e in app.exception]
     assert any("99.99" in w.value for w in app.warning)
+
+
+# ── Lever le doute sur un rendement ─────────────────────────────────────────
+
+def _atelier(AppTest, tables=None):
+    """L'app avec, au besoin, des tables déjà corrigées en session."""
+    import copy  # noqa: PLC0415
+
+    from chiffrage.moteur import tables_courantes  # noqa: PLC0415
+
+    at = AppTest.from_file(str(APP), default_timeout=240)
+    at.session_state["tables_editees"] = copy.deepcopy(
+        tables if tables is not None else tables_courantes())
+    at.run()
+    assert not at.exception, [e.value for e in at.exception]
+    return at
+
+
+def test_la_liste_a_valider_voyage_avec_les_tables(AppTest):
+    """L'atelier corrige une COPIE des tables. Si la liste des
+    rendements douteux n'en fait pas partie, lever un doute pendant une
+    séance de calibration n'a nulle part où s'écrire."""
+    from chiffrage.moteur import tables_courantes  # noqa: PLC0415
+
+    assert "ouvrages_a_valider" in tables_courantes()
+
+
+def test_lever_un_doute_fait_apparaitre_lenregistrement(AppTest):
+    """Une validation ne change AUCUN prix : elle n'apparaît dans
+    aucune des comparaisons de valeurs. Sans traitement à part, le
+    bouton d'enregistrement resterait absent et le travail serait perdu
+    au rafraîchissement suivant — le défaut déjà rencontré sur la
+    création d'ouvrage."""
+    import copy  # noqa: PLC0415
+
+    from chiffrage.moteur import tables_courantes  # noqa: PLC0415
+
+    tables = copy.deepcopy(tables_courantes())
+    assert tables["ouvrages_a_valider"], "aucun ouvrage douteux à lever"
+    tables["ouvrages_a_valider"] = tables["ouvrages_a_valider"][1:]
+    at = _atelier(AppTest, tables)
+
+    enregistrements = [b for b in at.button if "Enregistrer" in b.label]
+    telechargements = [d for d in at.get("download_button")
+                        if "ouvrages_a_valider" in d.label]
+    assert enregistrements or telechargements, (
+        "lever un doute ne propose ni enregistrement ni téléchargement")
+
+
+def test_le_compteur_annonce_le_nombre_restant(AppTest):
+    import copy  # noqa: PLC0415
+
+    from chiffrage.moteur import tables_courantes  # noqa: PLC0415
+
+    tables = copy.deepcopy(tables_courantes())
+    depart = len(tables["ouvrages_a_valider"])
+    tables["ouvrages_a_valider"] = tables["ouvrages_a_valider"][1:]
+    at = _atelier(AppTest, tables)
+    deltas = [m.delta for m in at.metric if m.label == "Valeurs corrigées"]
+    assert any(f"{depart} → {depart - 1}" in (d or "") for d in deltas)
+
+
+def test_le_doute_se_pose_aussi_sur_un_ouvrage_qui_nen_portait_pas(AppTest):
+    """Un ouvrage sans ⚠️ n'a pas été vérifié pour autant : il n'a
+    simplement pas été signalé. Pouvoir poser le doute est la moitié
+    utile du mécanisme."""
+    at = _atelier(AppTest)
+    # L'atelier ouvre sur la correction des taux : il faut passer sur les
+    # rendements pour voir le bouton.
+    [r for r in at.radio if "corriger" in (r.label or "").lower()][0].set_value(
+        "Un rendement (h/unité)").run()
+    assert not at.exception, [e.value for e in at.exception]
+    boutons = {b.key for b in at.button}
+    assert "corr_rend_valider" in boutons or "corr_rend_douter" in boutons
+
+
+def test_valider_puis_douter_fait_bien_laller_retour(AppTest):
+    """Le parcours réel : choisir le rendement d'un ouvrage marqué ⚠️,
+    déclarer qu'un chantier l'a confirmé, et pouvoir revenir dessus."""
+    from chiffrage.moteur import tables_courantes  # noqa: PLC0415
+
+    at = _atelier(AppTest)
+    [r for r in at.radio if "corriger" in (r.label or "").lower()][0].set_value(
+        "Un rendement (h/unité)").run()
+
+    tables = tables_courantes()
+    doute = tables["ouvrages_a_valider"][0]
+    indice = next(i for i, c in enumerate(tables["composition"])
+                   if c["code_ouv"] == doute
+                   and tables["ressources_par_code"][
+                       c["code_res"]]["type_res"] == "MO")
+    liste = [s for s in at.selectbox if s.key == "corr_rend"][0]
+    liste.set_value(indice).run()
+    assert not at.exception, [e.value for e in at.exception]
+
+    [b for b in at.button if b.key == "corr_rend_valider"][0].click().run()
+    assert doute not in at.session_state["tables_editees"]["ouvrages_a_valider"]
+
+    # Et le retour en arrière, sans quoi une validation trop rapide
+    # serait irrattrapable depuis l'interface.
+    [b for b in at.button if b.key == "corr_rend_douter"][0].click().run()
+    assert doute in at.session_state["tables_editees"]["ouvrages_a_valider"]

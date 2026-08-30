@@ -516,6 +516,27 @@ celles du module. **Les corrections ne valent que pour l'aperçu** tant
 qu'elles ne sont pas enregistrées : les devis et les offres continuent
 d'utiliser la bibliothèque du dépôt. Un test le vérifie.
 
+**Lever le doute sur un rendement** se fait au même endroit. Le ⚠️ de
+la colonne « À valider » ne dit pas *« ce prix est faux »* : il dit
+*« ce rendement n'a jamais été confronté à un chantier réel »*. Ce sont
+les treize ouvrages inventés pour couvrir des postes qui restaient sans
+prix — sans eux l'offre aurait été irrégulière (AR 18/04/2017, art.
+76).
+
+Une fois les heures relevées sur un chantier de cet ouvrage, le bouton
+**« ✅ Rendement confirmé par un chantier réalisé »** retire le code de
+la liste. Le sens inverse existe aussi, et compte autant : **« ⚠️
+Remettre ce rendement en doute »** marque n'importe lequel des 49
+ouvrages. Car l'absence de ⚠️ ne veut pas dire *validé* — seulement
+*non signalé* : les autres rendements viennent d'une documentation
+reconstruite, et seuls ceux qui pèsent dans les six devis historiques
+ont été confrontés à quelque chose de réel.
+
+Une validation ne change aucun prix, donc elle n'apparaît dans aucune
+comparaison de valeurs : elle est traitée à part, sans quoi lever un
+doute ne ferait apparaître aucun bouton d'enregistrement et le travail
+serait perdu au rafraîchissement suivant.
+
 **Créer un ouvrage absent** se fait au même endroit. Un ouvrage ne se
 résume pas à un prix : il lui faut un code, une **unité** — sans elle
 le contrôle d'unité devient inopérant — et surtout une
@@ -707,7 +728,7 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-160 tests. Ceux de la chaîne Excel se skippent sans openpyxl, ceux de
+185 tests. Ceux de la chaîne Excel se skippent sans openpyxl, ceux de
 l'interface sans streamlit. L'écriture GitHub est testée avec un
 dépôt simulé — la suite ne touche jamais au réseau.
 
