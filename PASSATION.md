@@ -5,7 +5,7 @@ autre assistant, autre développeur. Il donne le contexte, l'état réel, les
 décisions structurantes et — surtout — les pièges déjà payés. Le `README.md`
 documente l'outil ; celui-ci documente *le travail*.
 
-Dernière mise à jour : 30 août 2026 · 42 commits · 193 tests au vert.
+Dernière mise à jour : 30 août 2026 · 43 commits · 197 tests au vert.
 
 ---
 
@@ -198,6 +198,10 @@ l'écran avec celui du moteur.
 - `insert_rows` ne décale pas les formules — ancrer ligne par ligne
 - lire une quantité issue d'une formule demande **deux ouvertures** du
   classeur ; sans ça des postes disparaissent en silence
+- et la seconde ouverture doit viser la colonne **détectée**, pas celle de
+  la disposition par défaut : la quantité trouvée en G, son cache cherché
+  en F, et le poste ressortait « quantité illisible » alors que la valeur
+  était là. Un poste sans prix rend l'offre irrégulière (art. 76)
 
 **Streamlit**
 - `st.cache_data` sans clé sur une fonction qui dépend des paramètres : le
@@ -256,6 +260,15 @@ production (un terme de lexique, puis des écarts de calibration) : le test
 cassait dès que l'utilisateur s'en servait. **Asserter des relations, pas des
 littéraux.**
 
+**Tester les combinaisons, pas seulement les cas** — les deux défauts
+ci-dessus ont survécu à une suite qui couvrait chacune de leurs moitiés :
+« colonne déplacée » passait, « quantité en formule » passait, les deux
+ensemble perdaient le poste. De même, des colonnes numériques existaient
+sans qu'aucune n'atteigne le seuil, et `min()` levait sur une séquence
+vide. D'où un **classeur de torture** dans la suite : plusieurs feuilles
++ colonnes déplacées + quantité en formule + récapitulatif, d'un seul
+tenant. Un audit du dépôt les a trouvés ; les tests isolés, non.
+
 ---
 
 ## 8. Sécurité — contraintes en vigueur
@@ -281,7 +294,7 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-**193 tests.** Excel se skippe sans openpyxl, l'interface sans streamlit.
+**197 tests.** Excel se skippe sans openpyxl, l'interface sans streamlit.
 L'écriture GitHub est testée avec un dépôt simulé : la suite ne touche jamais
 au réseau. L'interface est testée par `AppTest`, qui **exécute vraiment le
 script**. Trois tests portent sur le notebook Colab, dont un qui vérifie que
