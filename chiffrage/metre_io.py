@@ -109,17 +109,36 @@ COL_MONTANT = COLONNES_DEFAUT["montant"]
 
 
 def _colonnes_de(ws, imposees=None):
-    """Les colonnes de CETTE feuille : imposées, détectées, ou par défaut."""
+    """Les colonnes de CETTE feuille : imposées, détectées, ou par défaut.
+
+    Une exception : la colonne du PU ne se DEVINE jamais. Elle est la
+    seule où l'outil écrive, et écrire un prix dans la mauvaise colonne
+    abîme le fichier du pouvoir adjudicateur en silence — un cas mesuré
+    ici : l'unité nommée « Unité » en G, la quantité trouvée en F, et
+    six « m2 » remplacés par des montants. Les autres champs se lisent :
+    un repli faux y produit une anomalie visible. Celui-là s'écrit.
+
+    Sans PU connu, la clé est ABSENTE plutôt que fausse — remplir_metre()
+    refuse alors d'écrire ces postes et les rend « sans prix », ce qui se
+    voit, au lieu de les écrire ailleurs, ce qui ne se voit pas.
+    """
     from .detection_colonnes import detecter
 
     if imposees:
-        return dict(COLONNES_DEFAUT, **imposees)
-    detection = detecter(ws)
-    if detection["manquants"]:
-        # Détection incomplète : on ne devine pas la moitié d'un
-        # tableau. Le repli est explicite, et l'interface le signale.
-        return dict(COLONNES_DEFAUT, **detection["champs"])
-    return detection["champs"]
+        cols = dict(COLONNES_DEFAUT, **imposees)
+        connu = "pu" in imposees
+    else:
+        detection = detecter(ws)
+        connu = "pu" in detection["champs"]
+        if detection["manquants"]:
+            # Détection incomplète : on ne devine pas la moitié d'un
+            # tableau. Le repli est explicite, et l'interface le signale.
+            cols = dict(COLONNES_DEFAUT, **detection["champs"])
+        else:
+            cols = detection["champs"]
+    if not connu:
+        cols.pop("pu", None)
+    return cols
 
 
 def _valeur(row, colonne):
@@ -383,7 +402,9 @@ def remplir_metre(
         chiffres[]      postes prix écrit  {code, ouvrage, pu, quantite, montant, heures}
         non_couverts[]  postes sans correspondance dans le mapping
         ecarts_unite[]  correspondance trouvée mais unité incompatible -> NON chiffrés
-        vides[]         codes restés sans prix (non_couverts + ecarts_unite)
+        sans_colonne_pu[] colonne du PU inconnue sur leur feuille -> NON écrits,
+                        avec le prix calculé, à porter à la main
+        vides[]         codes restés sans prix (les trois listes ci-dessus)
         total_ht, montant_tva, total_tvac, heures_mo, jours_homme
         fichier         chemin du fichier produit
     """
@@ -397,7 +418,7 @@ def remplir_metre(
     lecture = lire_metre_complet(chemin_sortie, feuilles, colonnes)
     postes, anomalies = lecture["postes"], lecture["anomalies"]
 
-    chiffres, non_couverts, ecarts_unite = [], [], []
+    chiffres, non_couverts, ecarts_unite, sans_colonne_pu = [], [], [], []
     total_ht = heures = 0.0
 
     for poste in postes:
@@ -430,14 +451,32 @@ def remplir_metre(
             )
             continue
 
+        # Colonne du PU inconnue sur cette feuille : on N'ÉCRIT PAS.
+        # Écrire au jugé mettrait le prix par-dessus une autre colonne
+        # du pouvoir adjudicateur — son unité, sa quantité — et
+        # personne ne le verrait. Le poste ressort « sans prix », ce
+        # qui est vrai, se lit dans le rapport, et compte pour l'art. 76.
+        col_pu = lecture["colonnes"][poste["feuille"]].get("pu")
+        if not col_pu:
+            sans_colonne_pu.append(
+                {
+                    "code": poste["code"],
+                    "designation": poste["designation"],
+                    "feuille": poste["feuille"],
+                    "code_ouv": code_ouv,
+                    "unite": poste["unite"],
+                    "quantite": poste["quantite"],
+                    "pu": ref["pu_vente"],
+                }
+            )
+            continue
+
         # Le prix retourne dans SA feuille : dans un classeur à un lot
         # par onglet, tout écrire sur la première les mettrait tous au
         # même endroit — et le pouvoir adjudicateur recevrait un
         # classeur incohérent sans qu'aucune erreur ne soit levée.
         wb[poste["feuille"]].cell(
-            row=poste["ligne"],
-            column=lecture["colonnes"][poste["feuille"]]["pu"],
-            value=ref["pu_vente"])
+            row=poste["ligne"], column=col_pu, value=ref["pu_vente"])
         montant = round(ref["pu_vente"] * poste["quantite"], 2)
         h = round(ref["heures_mo"] * poste["quantite"], 2)
         total_ht += montant
@@ -473,9 +512,12 @@ def remplir_metre(
         "chiffres": chiffres,
         "non_couverts": non_couverts,
         "ecarts_unite": ecarts_unite,
+        "sans_colonne_pu": sans_colonne_pu,
         "feuilles": lecture["feuilles"],
         "colonnes": lecture["colonnes"],
-        "vides": [p["code"] for p in non_couverts] + [e["code"] for e in ecarts_unite],
+        "vides": [p["code"] for p in non_couverts]
+        + [e["code"] for e in ecarts_unite]
+        + [p["code"] for p in sans_colonne_pu],
         "total_ht": total_ht,
         "tva_taux": taux,
         "montant_tva": round(total_ht * taux, 2),
@@ -507,6 +549,15 @@ def imprimer_rapport(rapport):
                 f"{e['code_ouv']} est en « {e['unite_ouvrage']} » — "
                 f"{e['designation']}"
             )
+    if r.get("sans_colonne_pu"):
+        feuilles = dict.fromkeys(p["feuille"] for p in r["sans_colonne_pu"])
+        out += ["", f"🛑 COLONNE DES PRIX INTROUVABLE sur "
+                    f"{', '.join(f'« {f} »' for f in feuilles)} — "
+                    f"{len(r['sans_colonne_pu'])} postes NON écrits :"]
+        for p in r["sans_colonne_pu"]:
+            out.append(f"   {p['code']}  {p['designation']} — prix calculé "
+                       f"{p['pu']:.2f} €/{p['unite']}, à porter à la main")
+        out.append("   Ou relancer en imposant la colonne du PU.")
     if r["non_couverts"]:
         out += ["", f"⚠️  {len(r['non_couverts'])} POSTES NON COUVERTS "
                     "(il manque l'ouvrage en bibliothèque) :"]

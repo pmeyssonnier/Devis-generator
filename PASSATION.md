@@ -5,7 +5,7 @@ autre assistant, autre développeur. Il donne le contexte, l'état réel, les
 décisions structurantes et — surtout — les pièges déjà payés. Le `README.md`
 documente l'outil ; celui-ci documente *le travail*.
 
-Dernière mise à jour : 30 août 2026 · 44 commits · 198 tests au vert.
+Dernière mise à jour : 30 août 2026 · 45 commits · 201 tests au vert.
 
 ---
 
@@ -249,6 +249,15 @@ de suite. Parade en deux moitiés, les deux nécessaires :
 
 En cas d'écran rouge après un push : **Manage app → Reboot app**.
 
+**Ce qui s'écrit et ce qui se lit ne se replient pas pareil.** Un champ
+qu'on LIT peut se replier sur une valeur par défaut : si elle est fausse,
+la lecture produit une anomalie visible. Le champ qu'on ÉCRIT — la
+colonne du PU, la seule — ne le peut pas : un repli faux met le prix
+par-dessus une autre colonne du pouvoir adjudicateur, et personne ne le
+voit. D'où la règle : **PU inconnu, on n'écrit pas**, les postes
+ressortent sans prix avec leur montant à porter à la main. Refuser se
+voit, se tromper de colonne, non.
+
 **Ergonomie mobile** — le chef d'entreprise travaille au téléphone.
 Un `st.data_editor` de 49 lignes est inutilisable au doigt : taper dans une
 cellule, valider, en sortir — chaque geste rate une fois sur deux, et une
@@ -294,7 +303,7 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-**198 tests.** Excel se skippe sans openpyxl, l'interface sans streamlit.
+**201 tests.** Excel se skippe sans openpyxl, l'interface sans streamlit.
 L'écriture GitHub est testée avec un dépôt simulé : la suite ne touche jamais
 au réseau. L'interface est testée par `AppTest`, qui **exécute vraiment le
 script**. Trois tests portent sur le notebook Colab, dont un qui vérifie que

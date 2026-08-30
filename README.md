@@ -433,6 +433,21 @@ code, ou non.
 La détection **propose**, l'interface affiche la correspondance et
 permet de la corriger avant tout chiffrage.
 
+**La colonne du prix ne se devine jamais.** C'est la seule où l'outil
+écrive, et les autres se lisent : un repli faux à la lecture produit une
+anomalie visible, un repli faux à l'écriture abîme le fichier du pouvoir
+adjudicateur en silence. Le cas mesuré : unité nommée « Unité » en G,
+quantité trouvée par contenu en F, déduction de position « PU = G » — et
+six « m2 » remplacés par des montants, sans avertissement puisque la
+détection se croyait complète.
+
+Deux garde-fous, désormais. Une colonne déjà attribuée à un autre champ
+n'est jamais reprise par déduction de position. Et si le PU reste
+inconnu, `remplir_metre()` **n'écrit rien** pour ces postes : ils
+ressortent « sans prix », avec le montant calculé à porter à la main, et
+comptent dans le décompte de l'art. 76. L'interface, elle, bloque avant
+le chiffrage tant que la colonne n'est pas désignée.
+
 **Les codes appartiennent au pouvoir adjudicateur.** Le lecteur accepte
 `03.02`, `3.2`, `01.02.03`, `03.02.A`, `1.01.10`, `A.1.2`, `03-02`,
 `03/02` — auparavant seul `NN.NN` passait, et un cahier des charges
@@ -796,7 +811,7 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-198 tests. Ceux de la chaîne Excel se skippent sans openpyxl, ceux de
+201 tests. Ceux de la chaîne Excel se skippent sans openpyxl, ceux de
 l'interface sans streamlit. L'écriture GitHub est testée avec un
 dépôt simulé — la suite ne touche jamais au réseau.
 
