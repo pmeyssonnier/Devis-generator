@@ -52,42 +52,12 @@ Le lien se fait exclusivement par MAPPING (ou la colonne `code_ref`).
 # 0. IDENTITÉ DE L'ENTREPRISE — en-tête des devis client
 # ═══════════════════════════════════════════════════════════════════════════
 
-ENTREPRISE = {
-    "nom": "BAG BATTER SRL",
-    "adresse": "Ronkel 18",
-    "cp_ville": "1780 Wemmel",
-    "pays": "Belgique",
-    "tva": "BE 0766.637.025",
-    "activite": "Entreprise générale de rénovation — façades, étanchéité, "
-                "plafonnage, isolation, peinture, menuiserie extérieure, "
-                "sanitaire léger",
-}
+# L'identité et les coefficients vivent dans parametres.py, et peuvent
+# être réglés depuis l'interface sans toucher au code : ce sont des
+# valeurs d'entreprise, pas des constantes techniques. Ils restent
+# importables ici, où tout le projet a l'habitude de les chercher.
+from .parametres import ENTREPRISE, PARAMS  # noqa: E402, F401
 
-
-# ═══════════════════════════════════════════════════════════════════════════
-# 1. PARAMÈTRES DE PRIX
-# ═══════════════════════════════════════════════════════════════════════════
-#
-#   pu_vente = debourse_sec x K
-#   K        = (1+FG) x (1+FC) x (1+aleas) x (1+marge)
-#
-# FG    frais généraux (siège, véhicules, assurances, administratif)
-# FC    frais de chantier non imputables à un ouvrage précis
-# aleas provision pour imprévus
-# marge bénéfice visé
-#
-# 0,12 / 0,05 / 0,03 / 0,10  ->  K = 1,3324  (+33,24 % sur le déboursé sec)
-
-PARAMS = {
-    "fg": 0.12,
-    "fc": 0.05,
-    "aleas": 0.03,
-    "marge": 0.10,
-    # 6 % : logement privé de plus de 10 ans, facturé au consommateur final.
-    # EN MARCHÉ PUBLIC C'EST 21 % — passer tva=0.21 aux fonctions de devis.
-    "tva": 0.06,
-    "tva_marche_public": 0.21,
-}
 
 # ═══════════════════════════════════════════════════════════════════════════
 # 2. RESSOURCES — 49 lignes

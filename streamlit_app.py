@@ -35,7 +35,11 @@ from chiffrage.bibliotheque import (
 from chiffrage.devis_xlsx import exporter_devis
 from chiffrage.controle_prix import analyser
 from chiffrage.detection_colonnes import CHAMPS, CHAMPS_REQUIS
-from chiffrage.depot_github import ErreurDepot, commiter_lexique
+from chiffrage.depot_github import (
+    ErreurDepot,
+    commiter_lexique,
+    commiter_parametres,
+)
 from chiffrage.justification_xlsx import exporter_justification
 from chiffrage.lexique import (
     DEMOLITION,
@@ -66,6 +70,7 @@ from chiffrage.moteur import (
     devis,
     fiche_prix,
 )
+from chiffrage.parametres import serialiser
 from chiffrage.suggestion import normaliser, proposer_mapping, suggerer
 
 st.set_page_config(page_title="Chiffrage BAG BATTER", page_icon="🧱",
@@ -155,8 +160,9 @@ with st.sidebar:
               help="pu_vente = déboursé sec × K")
 
     if abs(k - coefficient_k()) > 1e-9:
-        st.info("Coefficient modifié : il ne vaut que pour cette session, "
-                 "le dépôt n'est pas touché.", icon="💡")
+        st.info("Coefficient modifié pour cette session seulement. "
+                 "Pour changer la référence, voir l'onglet "
+                 "« ⚙️ Paramètres ».", icon="💡")
 
     anomalies = {c: v for c, v in controle_coherence().items() if v}
     if anomalies:
@@ -175,9 +181,9 @@ with st.sidebar:
 # ══════════════════════════════════════════════════
 
 (onglet_metre, onglet_devis, onglet_biblio,
- onglet_lexique, onglet_calib) = st.tabs(
-    ["📥 Répondre à un métré", "🧾 Devis client",
-     "📚 Bibliothèque", "🔤 Lexique", "🎯 Calibration"]
+ onglet_lexique, onglet_calib, onglet_params) = st.tabs(
+    ["📥 Répondre à un métré", "🧾 Devis client", "📚 Bibliothèque",
+     "🔤 Lexique", "🎯 Calibration", "⚙️ Paramètres"]
 )
 
 
@@ -1173,3 +1179,129 @@ with onglet_calib:
         width="stretch",
         hide_index=True,
     )
+
+
+# ══════════════════════════════════════════════════
+#  6. Paramètres
+# ══════════════════════════════════════════════════
+
+with onglet_params:
+    st.header("Paramètres")
+    st.markdown(
+        "L'identité de l'entreprise et les coefficients de vente. Ce sont "
+        "des valeurs **d'entreprise**, pas des constantes techniques : "
+        "elles se règlent ici, sans toucher au code."
+    )
+
+    st.subheader("Identité")
+    st.caption(
+        "Figure en en-tête de chaque devis et de chaque courrier de "
+        "justification de prix."
+    )
+    col_g, col_d = st.columns(2)
+    saisie_entreprise = {}
+    with col_g:
+        saisie_entreprise["nom"] = st.text_input(
+            "Raison sociale", ENTREPRISE["nom"])
+        saisie_entreprise["adresse"] = st.text_input(
+            "Adresse", ENTREPRISE["adresse"])
+        saisie_entreprise["cp_ville"] = st.text_input(
+            "Code postal et localité", ENTREPRISE["cp_ville"])
+    with col_d:
+        saisie_entreprise["pays"] = st.text_input("Pays", ENTREPRISE["pays"])
+        saisie_entreprise["tva"] = st.text_input(
+            "Numéro de TVA", ENTREPRISE["tva"])
+    saisie_entreprise["activite"] = st.text_area(
+        "Activité", ENTREPRISE["activite"], height=80)
+
+    st.subheader("Coefficients de vente")
+    st.caption(
+        "`pu_vente = déboursé sec × K`, avec "
+        "`K = (1+FG)(1+FC)(1+aléas)(1+marge)`. Les valeurs enregistrées "
+        "ici deviennent celles de départ ; la barre latérale sert à "
+        "simuler autre chose le temps d'une session."
+    )
+    c1, c2, c3, c4 = st.columns(4)
+    saisie_params = dict(PARAMS)
+    saisie_params["fg"] = c1.number_input(
+        "Frais généraux (%)", 0.0, 100.0, PARAMS["fg"] * 100, 0.5,
+        key="p_fg") / 100
+    saisie_params["fc"] = c2.number_input(
+        "Frais de chantier (%)", 0.0, 100.0, PARAMS["fc"] * 100, 0.5,
+        key="p_fc") / 100
+    saisie_params["aleas"] = c3.number_input(
+        "Aléas (%)", 0.0, 100.0, PARAMS["aleas"] * 100, 0.5,
+        key="p_aleas") / 100
+    saisie_params["marge"] = c4.number_input(
+        "Marge (%)", 0.0, 100.0, PARAMS["marge"] * 100, 0.5,
+        key="p_marge") / 100
+
+    t1, t2, t3 = st.columns(3)
+    saisie_params["tva"] = t1.number_input(
+        "TVA logement privé (%)", 0.0, 100.0, PARAMS["tva"] * 100, 1.0,
+        key="p_tva", help="6 % : logement de plus de dix ans, usage "
+                           "principalement privé, consommateur final.") / 100
+    saisie_params["tva_marche_public"] = t2.number_input(
+        "TVA marché public (%)", 0.0, 100.0,
+        PARAMS["tva_marche_public"] * 100, 1.0, key="p_tva_mp") / 100
+    t3.metric("Coefficient K", f"{coefficient_k(saisie_params):.4f}",
+               f"{(coefficient_k(saisie_params) - coefficient_k(PARAMS)):+.4f}"
+               if abs(coefficient_k(saisie_params)
+                       - coefficient_k(PARAMS)) > 1e-9 else None)
+
+    # ── Enregistrer ────────────────────────────
+    try:
+        contenu = serialiser(saisie_entreprise, saisie_params)
+    except ValueError as err:
+        st.error(str(err), icon="🛑")
+        contenu = None
+
+    modifie = contenu is not None and contenu != serialiser(ENTREPRISE, PARAMS)
+
+    if not modifie:
+        st.caption("Aucune modification par rapport aux valeurs enregistrées.")
+    else:
+        st.info(
+            "Modifications non enregistrées. Elles ne s'appliqueront "
+            "qu'une fois commitées — comme pour le lexique, rien ne "
+            "survit au redémarrage de l'app.",
+            icon="💡",
+        )
+
+    try:
+        github = dict(st.secrets.get("github", {}))
+    except Exception:
+        github = {}
+    depot, jeton = github.get("depot"), github.get("token")
+
+    if modifie and depot and jeton:
+        if st.button("📤 Enregistrer dans le dépôt", type="primary",
+                      width="stretch"):
+            with st.spinner("Écriture dans le dépôt…"):
+                try:
+                    url = commiter_parametres(
+                        contenu, depot, jeton,
+                        branche=github.get("branche", "main"))
+                except ErreurDepot as err:
+                    st.error(str(err), icon="🛑")
+                else:
+                    st.success(
+                        f"Enregistré. [Voir le commit]({url}) — l'app se "
+                        f"redéploie dans une à deux minutes, et ces "
+                        f"valeurs deviendront celles de départ.",
+                        icon="✅")
+    elif modifie:
+        st.caption(
+            "Aucun jeton GitHub configuré : impossible d'enregistrer "
+            "depuis ici. Le fichier à créer est "
+            "`chiffrage/parametres_local.json` — son contenu exact est "
+            "ci-dessous."
+        )
+
+    if contenu:
+        with st.expander("Contenu de `chiffrage/parametres_local.json`"):
+            st.code(contenu, language="json")
+            st.download_button(
+                "⬇️ Télécharger", contenu,
+                file_name="parametres_local.json",
+                mime="application/json", width="stretch")

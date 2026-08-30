@@ -6,9 +6,10 @@
 Sert au bouton « commiter » du lexique : rendre permanent un terme
 appris, sans quitter l'interface ni écrire de Python.
 
-Un seul fichier écrit, `chiffrage/lexique_local.json`, et **du JSON,
-jamais du code** — le contenu vient d'un champ de saisie, et écrire du
-Python à partir d'une saisie serait une injection.
+Deux fichiers écrits — `chiffrage/lexique_local.json` et
+`chiffrage/parametres_local.json` — et **du JSON, jamais du code** :
+le contenu vient de champs de saisie, et écrire du Python à partir
+d'une saisie serait une injection.
 
 ──────────────────────────────────────────────
 LE JETON
@@ -170,3 +171,23 @@ def commiter_lexique(contenu, depot, token, branche="main",
                         sort_keys=True) + "\n"
     url = _ecrire(chemin, texte, message, depot, token, branche, sha)
     return fusion, url
+
+
+def commiter_parametres(contenu, depot, token, branche="main",
+                         chemin="chiffrage/parametres_local.json",
+                         message="chore(parametres): réglés depuis l'interface",
+                         _lire=lire_fichier, _ecrire=ecrire_fichier):
+    """
+    Écrit l'identité et les coefficients réglés dans l'interface.
+
+    Retourne l'URL du commit.
+
+    À la différence du lexique, il n'y a RIEN à fusionner : les
+    paramètres forment un jeu cohérent, et deux versions ne
+    s'additionnent pas — une adresse ne se mélange pas à une autre. Le
+    dernier qui écrit a raison, mais pas en aveugle : le `sha` relu
+    juste avant fait échouer l'écriture si quelqu'un est passé entre
+    temps, plutôt que d'écraser en silence.
+    """
+    _, sha = _lire(chemin, depot, token, branche)
+    return _ecrire(chemin, contenu, message, depot, token, branche, sha)

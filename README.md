@@ -128,6 +128,29 @@ surcouche est globale au processus, et un serveur Streamlit sert tous
 ses visiteurs depuis un seul processus), et il **ne survit pas au
 redémarrage** — sauf à le commiter, voir juste en dessous.
 
+### Régler l'entreprise et les coefficients
+
+L'onglet **⚙️ Paramètres** porte la raison sociale, l'adresse, le
+numéro de TVA et les coefficients de vente (FG, FC, aléas, marge, taux
+de TVA). Ce sont des valeurs **d'entreprise**, pas des constantes
+techniques : changer une adresse ou un point de marge ne devrait pas
+demander d'éditer du Python.
+
+Même dispositif que le lexique — `chiffrage/parametres_local.json`,
+**du JSON et non du code**, écrit par le même bouton et le même jeton.
+Un fichier absent, illisible ou partiellement aberrant ne bloque rien :
+chaque bloc retombe indépendamment sur ses valeurs de repli, si bien
+qu'une marge mal saisie ne fait pas perdre l'adresse.
+
+À la différence du lexique, **rien ne se fusionne** : deux adresses ne
+s'additionnent pas. Le dernier qui écrit gagne, mais pas en aveugle —
+le `sha` relu juste avant fait échouer l'écriture si quelqu'un est
+passé entre-temps.
+
+Les coefficients de la **barre latérale** restent une simulation de
+session : ils servent à essayer un autre K sans engager la référence.
+L'onglet Paramètres, lui, fixe le point de départ.
+
 ### Rendre les termes permanents
 
 Avec un jeton GitHub configuré, l'onglet Lexique affiche un bouton
@@ -245,6 +268,7 @@ exporter_devis(d, "devis_2026-042.xlsx",
 | `devis_xlsx.py` | devis client prêt à envoyer : en-tête, postes par lot, TVA, conditions, signature | openpyxl |
 | `suggestion.py` | appariement poste imposé → ouvrage, à partir du libellé | — |
 | `lexique.py` | vocabulaire de CSC → vocabulaire de la bibliothèque, facette d'opération | — |
+| `parametres.py` | identité de l'entreprise et coefficients de vente, réglables depuis l'app | — |
 | `detection_colonnes.py` | quelle colonne est le code, la quantité, le prix | — |
 | `depot_github.py` | écrit le lexique appris dans le dépôt (API GitHub, urllib) | — |
 | `controle_prix.py` | relit une offre avant dépôt : couverture, rabais maximal, alertes | — |
@@ -546,7 +570,7 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-124 tests. Ceux de la chaîne Excel se skippent sans openpyxl, ceux de
+136 tests. Ceux de la chaîne Excel se skippent sans openpyxl, ceux de
 l'interface sans streamlit. L'écriture GitHub est testée avec un
 dépôt simulé — la suite ne touche jamais au réseau.
 

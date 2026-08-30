@@ -37,10 +37,10 @@ def app(AppTest):
 
 
 def test_app_demarre_sans_erreur(app):
-    assert len(app.tabs) == 5
+    assert len(app.tabs) == 6
 
 
-def test_les_cinq_onglets_s_affichent(app):
+def test_les_six_onglets_s_affichent(app):
     """Garde-fou du `st.stop()` : si un onglet arrête le script, les
     suivants n'ont plus ni tableau ni métrique."""
     labels = {m.label for m in app.metric}
@@ -259,3 +259,27 @@ def test_les_colonnes_detectees_sont_proposees_a_la_validation(app, tmp_path):
 
     # Et les postes sont lus : avant, ce métré rendait zéro poste.
     assert {m.label: m.value for m in app.metric}["Postes lus"] == "3"
+
+
+def test_onglet_parametres_expose_identite_et_coefficients(app):
+    """Adresse, TVA et coefficients se règlent sans toucher au code."""
+    from chiffrage.bibliotheque import ENTREPRISE
+
+    champs = {t.label: t.value for t in app.text_input}
+    assert champs["Raison sociale"] == ENTREPRISE["nom"]
+    assert champs["Numéro de TVA"] == ENTREPRISE["tva"]
+
+    cles = {n.key for n in app.number_input}
+    assert {"p_fg", "p_fc", "p_aleas", "p_marge"} <= cles
+
+
+def test_modifier_un_coefficient_propose_de_l_enregistrer(app):
+    """Et le dit clairement : rien ne survit au redémarrage sans commit."""
+    [n for n in app.number_input if n.key == "p_marge"][0].set_value(15.0).run()
+    assert not app.exception
+
+    ks = [m.value for m in app.metric if m.label == "Coefficient K"]
+    # Deux K : celui de la barre latérale (inchangé) et celui de
+    # l'onglet, qui suit la saisie.
+    assert "1.3324" in ks and any(k != "1.3324" for k in ks)
+    assert any("non enregistrées" in i.value for i in app.info)

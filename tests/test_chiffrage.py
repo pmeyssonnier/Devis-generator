@@ -1296,3 +1296,115 @@ def test_intitules_synonymes_sont_reconnus(openpyxl_dispo):
     # « Unité » ne doit pas être happé par « quantité ».
     assert _champ_de("Unité") == "unite"
     assert _champ_de("Observations") is None
+
+
+# ── 16. Paramètres réglables sans toucher au code ──────
+def test_parametres_par_defaut_quand_le_fichier_est_absent(tmp_path):
+    """Le cas NORMAL : aucun fichier local, on chiffre quand même."""
+    from chiffrage import parametres
+
+    entreprise, params = parametres.charger_local(tmp_path / "rien.json")
+    assert entreprise == parametres.ENTREPRISE_DEFAUT
+    assert params == parametres.PARAMS_DEFAUT
+
+
+def test_parametres_illisibles_ne_bloquent_pas(tmp_path):
+    from chiffrage import parametres
+
+    fichier = tmp_path / "casse.json"
+    fichier.write_text("{pas du json", encoding="utf-8")
+    entreprise, params = parametres.charger_local(fichier)
+    assert entreprise == parametres.ENTREPRISE_DEFAUT
+    assert params == parametres.PARAMS_DEFAUT
+
+
+def test_chaque_bloc_retombe_independamment_sur_son_defaut(tmp_path):
+    """Une marge aberrante ne doit pas faire perdre l'adresse."""
+    import json
+
+    from chiffrage import parametres
+
+    fichier = tmp_path / "partiel.json"
+    fichier.write_text(json.dumps({
+        "entreprise": {"nom": "AUTRE SRL", "cp_ville": "1000 Bruxelles"},
+        "params": {"marge": 9.9},          # aberrant : 990 %
+    }), encoding="utf-8")
+
+    entreprise, params = parametres.charger_local(fichier)
+    assert entreprise["nom"] == "AUTRE SRL"
+    assert entreprise["cp_ville"] == "1000 Bruxelles"
+    assert entreprise["pays"] == parametres.ENTREPRISE_DEFAUT["pays"]
+    assert params == parametres.PARAMS_DEFAUT     # le bloc entier est rejeté
+
+
+@pytest.mark.parametrize("params_faux, motif", [
+    ({"marge": 2.5}, "250 % de marge est une virgule mal placée"),
+    ({"marge": -0.1}, "un taux négatif"),
+    ({"fg": "beaucoup"}, "pas un nombre"),
+])
+def test_coefficients_aberrants_refuses(params_faux, motif):
+    from chiffrage import parametres
+
+    with pytest.raises(ValueError):
+        parametres.valider_params({**parametres.PARAMS_DEFAUT, **params_faux})
+
+
+def test_raison_sociale_vide_refusee():
+    """Elle figure en en-tête de chaque devis et de chaque courrier."""
+    from chiffrage import parametres
+
+    with pytest.raises(ValueError, match="raison sociale"):
+        parametres.valider_entreprise(
+            {**parametres.ENTREPRISE_DEFAUT, "nom": "   "})
+
+
+def test_numero_de_tva_absurde_refuse():
+    from chiffrage import parametres
+
+    with pytest.raises(ValueError, match="TVA"):
+        parametres.valider_entreprise(
+            {**parametres.ENTREPRISE_DEFAUT, "tva": "à compléter"})
+    # Mais les variantes d'écriture passent : on refuse l'absurde,
+    # pas la mise en forme.
+    for ecriture in ("BE0766637025", "BE 0766.637.025", "0766.637.025"):
+        parametres.valider_entreprise(
+            {**parametres.ENTREPRISE_DEFAUT, "tva": ecriture})
+
+
+def test_aller_retour_par_le_json(tmp_path):
+    from chiffrage import parametres
+
+    entreprise = dict(parametres.ENTREPRISE_DEFAUT, nom="AUTRE SRL")
+    params = dict(parametres.PARAMS_DEFAUT, marge=0.15)
+    fichier = tmp_path / "p.json"
+    fichier.write_text(parametres.serialiser(entreprise, params),
+                        encoding="utf-8")
+
+    relu_entreprise, relu_params = parametres.charger_local(fichier)
+    assert relu_entreprise["nom"] == "AUTRE SRL"
+    assert relu_params["marge"] == 0.15
+
+
+def test_commit_des_parametres_n_additionne_rien():
+    """Deux adresses ne se fusionnent pas : le dernier écrit gagne,
+    mais pas en aveugle — le sha relu fait échouer l'écriture si
+    quelqu'un est passé entre temps."""
+    from chiffrage import depot_github
+
+    vu = {}
+
+    def _lire(chemin, depot, token, branche):
+        return '{"entreprise": {"nom": "ANCIEN"}}', "sha-distant"
+
+    def _ecrire(chemin, contenu, message, depot, token, branche, sha):
+        vu.update(contenu=contenu, sha=sha, chemin=chemin)
+        return "https://github.com/x/y/commit/abc"
+
+    url = depot_github.commiter_parametres(
+        '{"entreprise": {"nom": "NOUVEAU"}}', "moi/depot", "jeton",
+        _lire=_lire, _ecrire=_ecrire)
+
+    assert "NOUVEAU" in vu["contenu"] and "ANCIEN" not in vu["contenu"]
+    assert vu["sha"] == "sha-distant"
+    assert vu["chemin"].endswith("parametres_local.json")
+    assert url.startswith("https://github.com/")
