@@ -1766,6 +1766,94 @@ def test_une_colonne_deja_attribuee_nest_pas_reprise_par_deduction(
         "une détection qui ignore où est le prix doit le dire")
 
 @pytest.fixture
+def metre_sans_colonne_de_prix(tmp_path, openpyxl_dispo):
+    """Le classeur où la colonne du PU est introuvable : « Métrage réel »
+    n'est pas un intitulé connu, et rien n'annonce un prix. L'unité, elle,
+    est nommée — et se trouve juste à droite de la quantité."""
+    lignes = [["Poste", "Description", "", "", "", "Métrage réel", "Unité"]]
+    lignes += [[f"1.01.{i:02d}", "Enduit de façade minéral armé", "", "", "",
+                 10.0 + i, "m2"] for i in range(6)]
+    chemin = tmp_path / "SANS_PU.xlsx"
+    _classeur(lignes, titre="Inventaire").save(str(chemin))
+    return chemin
+
+
+def _mapping_facade():
+    return {f"1.01.{i:02d}": "40.20" for i in range(6)}
+
+
+def test_sans_colonne_de_prix_rien_nest_ecrit(metre_sans_colonne_de_prix,
+                                               tmp_path):
+    """La colonne du PU est la seule où l'outil écrive. Ne pas savoir où
+    elle est ne doit pas se traduire par « écrire ailleurs » : le prix
+    atterrissait dans la colonne de l'unité, et six « m2 » devenaient des
+    montants dans le classeur rendu au pouvoir adjudicateur."""
+    from openpyxl import load_workbook  # noqa: PLC0415
+
+    from chiffrage.metre_io import remplir_metre
+
+    sortie = tmp_path / "offre.xlsx"
+    rapport = remplir_metre(str(metre_sans_colonne_de_prix), str(sortie),
+                             mapping=_mapping_facade())
+
+    assert rapport["postes"] == 6, "les postes doivent rester LISIBLES"
+    assert rapport["chiffres"] == []
+    assert len(rapport["sans_colonne_pu"]) == 6
+    assert {p["code"] for p in rapport["sans_colonne_pu"]} <= set(
+        rapport["vides"]), "des postes non écrits absents du décompte art. 76"
+
+    # Le prix calculé accompagne chaque poste : il reste à le porter à la
+    # main, ce qui n'est possible que s'il est dit.
+    assert all(p["pu"] > 0 for p in rapport["sans_colonne_pu"])
+
+    # Et le classeur est intact — c'est tout l'objet.
+    ws = load_workbook(str(sortie))["Inventaire"]
+    for ligne in range(2, 8):
+        assert ws.cell(ligne, 7).value == "m2", "l'unité a été écrasée"
+        assert isinstance(ws.cell(ligne, 6).value, (int, float))
+
+
+def test_le_rapport_nomme_la_feuille_et_le_prix_a_porter(
+        metre_sans_colonne_de_prix, tmp_path):
+    """Un poste non écrit sans explication est un poste perdu."""
+    from chiffrage.metre_io import imprimer_rapport, remplir_metre
+
+    rapport = remplir_metre(str(metre_sans_colonne_de_prix),
+                             str(tmp_path / "offre.xlsx"),
+                             mapping=_mapping_facade())
+    texte = imprimer_rapport(rapport)
+
+    assert "Inventaire" in texte
+    assert "1.01.00" in texte
+    assert "OFFRE IRRÉGULIÈRE" in texte
+
+
+def test_imposer_la_colonne_du_prix_debloque_lecriture(
+        metre_sans_colonne_de_prix, tmp_path):
+    """Le refus n'est pas une impasse : dire où est le prix suffit, et
+    c'est exactement ce que l'interface demande avant de chiffrer."""
+    from openpyxl import load_workbook  # noqa: PLC0415
+
+    from chiffrage.metre_io import remplir_metre
+
+    sortie = tmp_path / "offre.xlsx"
+    rapport = remplir_metre(
+        str(metre_sans_colonne_de_prix), str(sortie),
+        mapping=_mapping_facade(),
+        colonnes={"code": 1, "designation": 2, "quantite": 6, "unite": 7,
+                   "pu": 8})
+
+    assert len(rapport["chiffres"]) == 6
+    assert rapport["sans_colonne_pu"] == []
+    assert rapport["vides"] == []
+
+    ws = load_workbook(str(sortie))["Inventaire"]
+    for ligne in range(2, 8):
+        assert isinstance(ws.cell(ligne, 8).value, (int, float))
+        assert ws.cell(ligne, 7).value == "m2"
+
+
+@pytest.fixture
 def metre_de_torture(tmp_path, openpyxl_dispo):
     """Les quatre pièges d'un coup — plusieurs feuilles, colonnes
     déplacées, quantité en formule avec cache, récapitulatif reprenant
