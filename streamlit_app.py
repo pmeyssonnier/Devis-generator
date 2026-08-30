@@ -1079,10 +1079,20 @@ with onglet_biblio:
         "avant tout enregistrement."
     )
 
-    if "tables_editees" not in st.session_state:
-        st.session_state.tables_editees = copy.deepcopy(tables_courantes())
-    tables = st.session_state.tables_editees
     origine = tables_courantes()
+    if "tables_editees" not in st.session_state:
+        st.session_state.tables_editees = copy.deepcopy(origine)
+    tables = st.session_state.tables_editees
+    # Un déploiement ne coupe pas les sessions ouvertes : Streamlit relit le
+    # script dans le MÊME processus et l'état de session survit. Les tables
+    # en cours de correction peuvent donc dater d'une version où une table
+    # n'existait pas encore — c'est ce qui a planté l'app le jour où
+    # `ouvrages_a_valider` est apparu, en plein écran et chez le client.
+    # Compléter vaut mieux qu'écraser : les corrections en cours sont
+    # gardées, seules les tables absentes sont reprises de la bibliothèque.
+    for nom, valeur in origine.items():
+        if nom not in tables:
+            tables[nom] = copy.deepcopy(valeur)
 
     # ── Corriger une valeur ────────────────────
     # Un tableur de 49 lignes ne se remplit pas au doigt : taper dans

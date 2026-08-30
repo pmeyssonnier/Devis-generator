@@ -761,7 +761,7 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-189 tests. Ceux de la chaîne Excel se skippent sans openpyxl, ceux de
+190 tests. Ceux de la chaîne Excel se skippent sans openpyxl, ceux de
 l'interface sans streamlit. L'écriture GitHub est testée avec un
 dépôt simulé — la suite ne touche jamais au réseau.
 

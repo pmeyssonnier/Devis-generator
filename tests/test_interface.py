@@ -846,3 +846,27 @@ def test_un_mot_absent_renvoie_vers_le_lexique(app):
     faiences = [c for c in proches["Désignation"]
                  if "aïence" in c or "arrelage" in c]
     assert faiences, f"le lexique n'a pas mené à la faïence : {list(proches['Désignation'])}"
+
+
+def test_une_session_ouverte_pendant_un_deploiement_ne_plante_pas(AppTest):
+    """Streamlit relit le script dans le même processus : l'état de
+    session survit à un déploiement. Une table ajoutée par la nouvelle
+    version manque alors aux tables en cours de correction — KeyError en
+    plein écran, chez le client. Compléter, sans écraser ce qui est
+    corrigé."""
+    import copy  # noqa: PLC0415
+
+    from chiffrage.moteur import tables_courantes  # noqa: PLC0415
+
+    vieilles = copy.deepcopy(tables_courantes())
+    del vieilles["ouvrages_a_valider"]          # la version d'avant
+    vieilles["ressources"][0]["pu_res"] = 77.0  # une correction en cours
+
+    at = AppTest.from_file(str(APP), default_timeout=240)
+    at.session_state["tables_editees"] = vieilles
+    at.run()
+    assert not at.exception, [e.value for e in at.exception]
+
+    tables = at.session_state["tables_editees"]
+    assert tables["ouvrages_a_valider"], "la table manquante n'a pas été reprise"
+    assert tables["ressources"][0]["pu_res"] == 77.0, "la correction a été écrasée"
