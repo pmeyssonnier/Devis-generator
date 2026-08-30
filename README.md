@@ -206,6 +206,31 @@ qu'aucun ouvrage ne couvre.
 La correspondance obtenue se télécharge en `.json` et se recharge au
 marché suivant : une commune réutilise ses propres codes.
 
+### Ce que voit un client final
+
+`.streamlit/config.toml` règle `toolbarMode = "viewer"` : le menu ⋮ en
+haut à droite perd **Rerun**, **Clear cache**, **Deploy** et le lien
+vers la source. `showErrorDetails = "none"` remplace les tracebacks
+plein écran par un message court — la trace complète reste dans les
+logs Streamlit Cloud. Les entrées « Get help » et « Report a bug »,
+qui menaient au forum Streamlit, sont retirées par `menu_items`.
+
+**Deux choses que ce réglage ne fait pas.** Le bouton **« Manage app »**
+en bas à droite n'est pas posé par l'app : c'est Streamlit Cloud qui
+l'affiche aux comptes **développeurs** de l'app. Un client invité par
+e-mail ne le voit pas ; nous le voyons parce que nous sommes
+propriétaires. Aucune configuration ne le retire de notre côté — pour
+vérifier ce que voit le client, ouvrir l'app en navigation privée
+depuis un compte invité. Et **le dépôt est public** : cacher un lien
+n'y change rien. Ce qui ferme réellement l'accès, c'est la liste
+d'e-mails autorisés (*Settings → Sharing*) ; ce qui fermerait l'accès
+au code, c'est de passer le dépôt en privé.
+
+Le fichier est **suivi par git** malgré la règle `.streamlit/*.toml`
+du `.gitignore` (qui protège `secrets.toml`) : sans lui déployé,
+Streamlit reprendrait ses valeurs par défaut. Un test échoue si
+l'exception venait à sauter.
+
 ### Depuis le téléphone — Colab
 
 Ouvre **[`colab/chiffrage_bagbatter.ipynb`](colab/chiffrage_bagbatter.ipynb)**

@@ -30,3 +30,7 @@ venv/
 .streamlit/secrets.toml
 .streamlit/*.toml
 !.streamlit/secrets.toml.example
+# Le fichier d'affichage (toolbarMode, thème) ne contient aucun secret
+# et doit être déployé avec l'app : sans lui, Streamlit Cloud reprend
+# ses valeurs par défaut et le client final retrouve les boutons de dev.
+!.streamlit/config.toml

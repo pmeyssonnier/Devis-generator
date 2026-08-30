@@ -493,3 +493,35 @@ def test_un_ouvrage_sans_composition_ne_peut_pas_etre_cree(app):
     _regler(app, "neuf_lot", "70", "selectbox")
     _regler(app, "neuf_libelle", "Poste sans composition", "text_input")
     assert [b for b in app.button if b.key == "neuf_creer"][0].disabled
+
+
+# ── Ce que voit un client final ─────────────────────────────────────────────
+# Ces deux tests ne vérifient pas du code mais de la configuration. Ils sont
+# ici parce que la configuration est justement ce qui casse en silence : un
+# fichier ignoré par git n'est jamais déployé, et rien ne le signale.
+
+def test_la_barre_de_developpement_est_masquee():
+    """`toolbarMode = "viewer"` retire Rerun / Clear cache / Deploy du menu.
+    Ce n'est pas une protection — c'est de l'affichage — mais le client final
+    ne doit pas tomber sur une console de développement."""
+    tomllib = pytest.importorskip("tomllib")
+    fichier = APP.parent / ".streamlit" / "config.toml"
+    assert fichier.exists(), "sans ce fichier, Streamlit reprend ses défauts"
+    config = tomllib.loads(fichier.read_text(encoding="utf-8"))
+    assert config["client"]["toolbarMode"] == "viewer"
+
+
+def test_la_configuration_daffichage_est_bien_suivie_par_git():
+    """`.gitignore` exclut `.streamlit/*.toml` pour protéger secrets.toml.
+    L'exception qui laisse passer config.toml est fragile : la perdre ne
+    casserait rien en local, l'app déployée retrouverait juste ses boutons
+    de développement. D'où ce garde-fou."""
+    import shutil
+    import subprocess
+
+    if shutil.which("git") is None:                    # pragma: no cover
+        pytest.skip("git absent")
+    ignore = subprocess.run(
+        ["git", "check-ignore", "-q", ".streamlit/config.toml"],
+        cwd=APP.parent, capture_output=True)
+    assert ignore.returncode != 0, ".streamlit/config.toml est ignoré par git"

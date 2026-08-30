@@ -1,0 +1,28 @@
+# Réglages d'affichage de l'application — pas de secret ici, ce fichier est suivi.
+#
+# Objectif : ce que voit un client final invité sur l'app ne doit pas être une
+# console de développement. Attention à ne pas confondre cacher et interdire :
+# ces réglages retirent des boutons de l'écran, ils ne créent aucune frontière
+# de sécurité. Ce qui protège réellement l'app, c'est la liste d'e-mails
+# autorisés (Streamlit Cloud > Settings > Sharing) et le fait que le jeton
+# GitHub vive dans les secrets, jamais dans le dépôt.
+
+[client]
+# "viewer" retire du menu (⋮ en haut à droite) et de la barre d'outils les
+# entrées de développement : Rerun, Clear cache, Deploy, « Edit »/source. Le
+# client garde ce qui le concerne (impression, thème).
+#
+# Pourquoi pas "minimal" : "minimal" ne garde que les entrées posées de
+# l'extérieur — donc justement celles que Community Cloud injecte. "viewer"
+# vise ce qu'on veut retirer plutôt que ce qu'on veut garder.
+toolbarMode = "viewer"
+
+# Un traceback Python affiché en plein écran chez un client n'a aucune valeur
+# pour lui et expose des chemins de fichiers. Le message générique reste à
+# l'écran, la trace complète part dans les logs Streamlit Cloud, où elle nous
+# est accessible via « Manage app ».
+showErrorDetails = "none"
+
+[browser]
+# Aucune statistique d'usage envoyée à Streamlit.
+gatherUsageStats = false

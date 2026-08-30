@@ -76,8 +76,16 @@ from chiffrage.moteur import (
 from chiffrage.parametres import serialiser
 from chiffrage.suggestion import normaliser, proposer_mapping, suggerer
 
+# menu_items : « Get help » et « Report a bug » pointent par défaut vers
+# Streamlit, pas vers nous — un client final qui a un souci de chiffrage n'a
+# rien à faire sur un forum Streamlit. Les mettre à None les retire du menu.
+# Le texte « About » remplace la mention par défaut de Streamlit.
 st.set_page_config(page_title="Chiffrage BAG BATTER", page_icon="🧱",
-                    layout="wide")
+                    layout="wide",
+                    menu_items={"Get help": None, "Report a bug": None,
+                                "About": "Outil de chiffrage BAG BATTER SRL — "
+                                         "prix unitaires sur métré de marché "
+                                         "public."})
 
 # Un score sous ce seuil n'est pas montré comme une suggestion : afficher du
 # bruit ferait perdre plus de temps qu'il n'en fait gagner.
