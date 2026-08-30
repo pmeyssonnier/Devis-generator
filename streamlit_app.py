@@ -16,6 +16,7 @@ Lancement local :
     streamlit run streamlit_app.py
 """
 
+import hashlib
 import json
 from datetime import date, datetime
 from pathlib import Path
@@ -50,6 +51,7 @@ from chiffrage.lexique import (
 )
 from chiffrage.gen_metre import generer_metre
 from chiffrage.metre_io import (
+    feuilles_avec_postes,
     lire_metre_complet,
     normaliser_unite,
     remplir_metre,
@@ -220,8 +222,49 @@ def _repondre_a_un_metre(params):
         chemin_metre = Path(tmp) / fichier.name
         chemin_metre.write_bytes(fichier.getvalue())
 
+        # ── Choix des feuilles ────────────────────────
+        # Un métré réel se répartit souvent en « Lot 01 », « Lot 02 »…
+        # plus un « Récapitulatif » qui REPREND les mêmes codes :
+        # le traiter ferait compter les postes deux fois.
         try:
-            lecture = lire_metre_complet(str(chemin_metre))
+            inventaire = [f for f in feuilles_avec_postes(str(chemin_metre))
+                           if f["nb_postes"]]
+        except Exception as err:
+            st.error(f"Lecture impossible : {err}", icon="🛑")
+            return
+
+        if not inventaire:
+            st.error(
+                "Aucune feuille ne contient de postes reconnaissables. "
+                "L'outil cherche une colonne de codes (B) et une colonne "
+                "de quantités (F).",
+                icon="🛑")
+            return
+
+        if len(inventaire) > 1:
+            st.markdown("**Feuilles à traiter**")
+            retenues = []
+            for feuille in inventaire:
+                marque = " · récapitulatif présumé" if feuille["recapitulatif"] else ""
+                if st.checkbox(
+                    f"{feuille['nom']} — {feuille['nb_postes']} postes{marque}",
+                    value=not feuille["recapitulatif"],
+                    key=f"feuille_{feuille['nom']}",
+                ):
+                    retenues.append(feuille["nom"])
+            if not retenues:
+                st.warning("Aucune feuille retenue.", icon="⚠️")
+                return
+            st.caption(
+                "Un récapitulatif reprend les codes des lots : le cocher "
+                "ferait compter chaque poste deux fois. Les doublons sont "
+                "signalés, jamais additionnés."
+            )
+        else:
+            retenues = [inventaire[0]["nom"]]
+
+        try:
+            lecture = lire_metre_complet(str(chemin_metre), retenues)
         except Exception as err:
             st.error(f"Lecture impossible : {err}", icon="🛑")
             return
@@ -259,8 +302,13 @@ def _repondre_a_un_metre(params):
         # La version du lexique entre dans la signature : ajouter un
         # synonyme dans l'onglet Lexique doit refaire l'appariement,
         # sinon l'essai n'a aucun effet visible ici.
-        signature = (fichier.name, len(fichier.getvalue()), len(postes),
-                      st.session_state.get("lexique_version", 0))
+        # Le contenu, pas le nom ni la taille : deux métrés différents
+        # peuvent porter le même nom et peser pareil.
+        signature = (
+            hashlib.sha256(fichier.getvalue()).hexdigest(),
+            tuple(retenues),
+            st.session_state.get("lexique_version", 0),
+        )
         if st.session_state.get("signature") != signature:
             st.session_state.signature = signature
             st.session_state.mapping = {
@@ -410,7 +458,7 @@ def _repondre_a_un_metre(params):
                 sortie = Path(tmp) / f"OFFRE_{Path(fichier.name).stem}.xlsx"
                 rapport = remplir_metre(
                     str(entree), str(sortie), mapping=mapping,
-                    params=params, tva=tva,
+                    params=params, tva=tva, feuilles=retenues,
                 )
                 octets = sortie.read_bytes()
 

@@ -1036,3 +1036,122 @@ def test_quantite_en_formule_avec_valeur_en_cache_est_utilisee(tmp_path,
     # Sans cache, le poste part en anomalie plutôt que d'être deviné.
     assert [a["genre"] for a in lecture["anomalies"]] == ["quantite_illisible"]
     assert "03.02" not in {p["code"] for p in lecture["postes"]}
+
+
+# ── 14. Codes tolérants et classeurs multi-feuilles ──────
+@pytest.mark.parametrize("code", [
+    "03.02", "3.2", "01.02.03", "03.02.A", "1.01.10", "A.1.2",
+    "03-02", "03/02",
+])
+def test_formes_de_codes_acceptees(code):
+    """Un CSC numéroté 01.02.03 rendait ZÉRO poste, avec pour tout
+    message « aucun poste lu »."""
+    from chiffrage.metre_io import est_code_poste
+
+    assert est_code_poste(code)
+
+
+@pytest.mark.parametrize("pas_un_code", [
+    "2026",            # pas de séparateur
+    "Lot 03",          # espace
+    "12,5",            # virgule décimale
+    "Récapitulatif",
+    "TOTAL",
+    "m2",
+    "A.B",             # aucun chiffre
+    "",
+    None,
+    42,                # une cellule numérique n'est pas un code
+])
+def test_le_bruit_reste_ecarte(pas_un_code):
+    """Élargir le motif ne doit pas transformer n'importe quelle
+    cellule en poste."""
+    from chiffrage.metre_io import est_code_poste
+
+    assert not est_code_poste(pas_un_code)
+
+
+@pytest.fixture
+def metre_multi(tmp_path, openpyxl_dispo):
+    """Un métré comme en envoient les communes : un onglet par lot,
+    plus un récapitulatif qui reprend les mêmes codes."""
+    from openpyxl import load_workbook
+
+    from chiffrage.gen_metre import generer_metre
+
+    chemin = tmp_path / "MULTI.xlsx"
+    generer_metre(str(chemin))
+    wb = load_workbook(str(chemin))
+    src = wb["MÉTRÉ"]
+    lot2 = wb.copy_worksheet(src)
+    lot2.title = "Lot 02"
+    recap = wb.copy_worksheet(src)
+    recap.title = "Récapitulatif"
+    src.title = "Lot 01"
+    for row in lot2.iter_rows():          # le lot 2 a ses propres codes
+        code = row[1].value
+        if isinstance(code, str) and code.count(".") == 1 and code[0].isdigit():
+            row[1].value = "1" + code
+    wb.save(str(chemin))
+    return chemin
+
+
+def test_inventaire_des_feuilles_et_presomption_de_recapitulatif(metre_multi):
+    from chiffrage.metre_io import feuilles_avec_postes
+
+    inventaire = {f["nom"]: f for f in feuilles_avec_postes(str(metre_multi))}
+    assert inventaire["Lot 01"]["nb_postes"] == 49
+    assert inventaire["Lot 02"]["nb_postes"] == 49
+    assert inventaire["Récapitulatif"]["recapitulatif"] is True
+    assert inventaire["Lot 01"]["recapitulatif"] is False
+
+
+def test_toutes_les_feuilles_sont_lues_par_defaut(metre_multi):
+    """Perdre un lot entier en silence serait pire que lire un
+    récapitulatif : les doublons, eux, sont signalés."""
+    from chiffrage.metre_io import lire_metre_complet
+
+    lecture = lire_metre_complet(str(metre_multi), ["Lot 01", "Lot 02"])
+    assert len(lecture["postes"]) == 98
+    assert {p["feuille"] for p in lecture["postes"]} == {"Lot 01", "Lot 02"}
+
+
+def test_le_recapitulatif_produit_des_doublons_pas_un_double_compte(
+        metre_multi):
+    """Le vrai danger du multi-feuilles : un récap qui reprend les
+    codes des lots doublerait le montant de l'offre."""
+    from chiffrage.metre_io import lire_metre_complet
+
+    lecture = lire_metre_complet(str(metre_multi))
+    doublons = [a for a in lecture["anomalies"]
+                 if a["genre"] == "code_duplique"]
+    assert len(doublons) == 49
+    assert {a["feuille"] for a in doublons} == {"Récapitulatif"}
+    # 98 postes chiffrables, pas 147 : rien n'est compté deux fois.
+    assert len(lecture["postes"]) == 98
+
+
+def test_le_prix_est_ecrit_dans_la_feuille_du_poste(metre_multi, tmp_path):
+    """Tout écrire sur la première feuille rendrait un classeur
+    incohérent au pouvoir adjudicateur, sans qu'aucune erreur ne soit
+    levée."""
+    from openpyxl import load_workbook
+
+    from chiffrage.metre_io import COL_PU, remplir_metre
+
+    sortie = tmp_path / "offre.xlsx"
+    rapport = remplir_metre(str(metre_multi), str(sortie),
+                             feuilles=["Lot 01", "Lot 02"])
+    assert rapport["postes"] == 98
+
+    wb = load_workbook(str(sortie))
+
+    def prix_ecrits(nom):
+        return sum(1 for row in wb[nom].iter_rows() for c in row
+                    if c.column == COL_PU and isinstance(c.value, (int, float)))
+
+    # Les codes du lot 2 ne sont pas au mapping : rien ne s'y écrit,
+    # et surtout rien ne se déverse sur le lot 1.
+    assert prix_ecrits("Lot 01") == len(rapport["chiffres"])
+    assert prix_ecrits("Récapitulatif") == 0
+    assert len(rapport["non_couverts"]) == 49

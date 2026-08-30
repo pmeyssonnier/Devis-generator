@@ -314,6 +314,25 @@ la cellule passe en ligne 21 : le fichier s'ouvre sans erreur et calcule faux.
 `gen_metre.py` écrit donc les lignes de sous-total **au fil de la boucle**,
 jamais insérées après coup — et n'appelle jamais `insert_rows`.
 
+**Les codes appartiennent au pouvoir adjudicateur.** Le lecteur accepte
+`03.02`, `3.2`, `01.02.03`, `03.02.A`, `1.01.10`, `A.1.2`, `03-02`,
+`03/02` — auparavant seul `NN.NN` passait, et un cahier des charges
+numéroté `01.02.03` rendait **zéro** poste, avec pour tout message
+« aucun poste lu ». Élargir un motif risque de prendre pour un poste ce
+qui n'en est pas : le garde-fou n'est pas la sévérité du motif mais la
+**seconde condition** — une ligne n'est un poste que si elle porte
+aussi une quantité lisible.
+
+**Un classeur, plusieurs feuilles.** Un métré réel se répartit souvent
+en « Lot 01 », « Lot 02 »… plus un « Récapitulatif » qui **reprend les
+mêmes codes**. L'interface liste les feuilles avec leur nombre de
+postes et décoche d'office celles qui ressemblent à un récapitulatif —
+une présomption tirée du nom, jamais une décision. Chaque poste retient
+sa feuille, et le prix y retourne : tout écrire sur la première
+rendrait au pouvoir adjudicateur un classeur incohérent sans qu'aucune
+erreur ne soit levée. Un code vu deux fois est signalé, jamais
+additionné.
+
 **Rien n'est écarté en silence.** Une ligne du métré qu'on ne sait pas
 lire doit **apparaître**, pas disparaître. La règle a été apprise à la
 dure : une quantité écrite `=12.5*3` — ce qu'un pouvoir adjudicateur
@@ -509,7 +528,7 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-93 tests. Ceux de la chaîne Excel se skippent sans openpyxl, ceux de
+111 tests. Ceux de la chaîne Excel se skippent sans openpyxl, ceux de
 l'interface sans streamlit. L'écriture GitHub est testée avec un
 dépôt simulé — la suite ne touche jamais au réseau.
 

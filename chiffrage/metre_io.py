@@ -51,9 +51,38 @@ from openpyxl import load_workbook
 from .bibliotheque import MAPPING, PARAMS
 from .moteur import calcul_bordereau
 
-# Un code de poste de métré imposé : NN.NN (ne jamais confondre avec les
-# codes d'ouvrage LL.NN de la bibliothèque — espaces de nommage distincts).
-RE_CODE_POSTE = re.compile(r"^\d{2}\.\d{2}$")
+# ══════════════════════════════════════════
+#  À quoi ressemble un code de poste
+# ══════════════════════════════════════════
+#
+# Les codes appartiennent au pouvoir adjudicateur, pas à nous. `NN.NN`
+# était la forme du métré d'entraînement, et elle seule était acceptée :
+# un cahier des charges numéroté `01.02.03` ou `3.2` rendait ZÉRO poste,
+# avec pour tout message « aucun poste lu ».
+#
+# Le motif accepte donc : 3.2 · 03.02 · 01.02.03 · 03.02.A · 1.01.10 ·
+# A.1.2 · 03-02 · 03/02.
+#
+# Élargir un motif, c'est risquer de prendre pour un poste ce qui n'en
+# est pas. Trois garde-fous :
+#   · au moins un séparateur — « 2026 » n'est pas un code ;
+#   · au moins un chiffre — « A.B » non plus ;
+#   · et surtout, LE CODE NE SUFFIT PAS : une ligne n'est un poste que
+#     si elle porte aussi une quantité lisible. C'est cette seconde
+#     condition, pas la sévérité du motif, qui écarte le bruit.
+#
+# Modifiable si un marché impose une forme exotique — sans jamais
+# supprimer le contrôle.
+RE_CODE_POSTE = re.compile(
+    r"^[A-Za-z0-9]{1,3}(?:[./-][A-Za-z0-9]{1,3}){1,4}$")
+
+
+def est_code_poste(valeur):
+    """La cellule ressemble-t-elle à un code de poste ?"""
+    if not isinstance(valeur, str):
+        return False
+    code = valeur.strip()
+    return bool(RE_CODE_POSTE.match(code)) and any(c.isdigit() for c in code)
 
 COL_CODE = 2       # B
 COL_DESIGNATION = 3  # C
@@ -93,15 +122,66 @@ def normaliser_unite(unite):
     return _EQUIV_UNITES.get(u, u)
 
 
-def _anomalie(genre, code, ligne, detail):
-    return {"genre": genre, "code": code, "ligne": ligne, "detail": detail}
+def _anomalie(genre, code, ligne, detail, feuille=None):
+    return {"genre": genre, "code": code, "ligne": ligne,
+            "detail": detail, "feuille": feuille}
 
 
-def lire_metre_complet(chemin, feuille=None):
+def feuilles_avec_postes(chemin):
+    """
+    Inventaire des feuilles du classeur et de ce qu'elles contiennent.
+
+    Retourne [{"nom", "nb_postes", "recapitulatif"}], dans l'ordre du
+    classeur. Sert à laisser l'utilisateur choisir : un métré réel se
+    répartit souvent en « Lot 01 », « Lot 02 »… plus un
+    « Récapitulatif » qui REPREND les mêmes codes. Traiter ce dernier
+    ferait compter les postes deux fois.
+
+    `recapitulatif` est une simple présomption tirée du nom de la
+    feuille — un indice pour pré-décocher la case, jamais une décision.
+    """
+    wb = load_workbook(chemin)
+    inventaire = []
+    for nom in wb.sheetnames:
+        ws = wb[nom]
+        nb = sum(
+            1 for row in ws.iter_rows(min_row=1, max_row=ws.max_row)
+            if len(row) >= COL_QUANTITE
+            and est_code_poste(row[COL_CODE - 1].value)
+        )
+        minuscule = nom.lower()
+        inventaire.append({
+            "nom": nom,
+            "nb_postes": nb,
+            "recapitulatif": any(mot in minuscule for mot in
+                                  ("recap", "récap", "synth", "total",
+                                   "resume", "résumé")),
+        })
+    wb.close()
+    return inventaire
+
+
+def _feuilles_a_lire(wb, feuilles):
+    """Résout l'argument `feuilles` : None, un nom, ou une liste."""
+    if feuilles is None:
+        # Par défaut, TOUTES les feuilles : mieux vaut lire un
+        # récapitulatif et signaler les doublons que perdre un lot
+        # entier sans que personne ne s'en aperçoive.
+        return list(wb.sheetnames)
+    if isinstance(feuilles, str):
+        return [feuilles]
+    return list(feuilles)
+
+
+def lire_metre_complet(chemin, feuilles=None):
     """
     Lit les postes d'un métré imposé, et rend AUSSI ce qu'il n'a pas su lire.
 
-    Retourne {"postes": [...], "anomalies": [...]}.
+    Retourne {"postes": [...], "anomalies": [...], "feuilles": [...]}.
+    Chaque poste porte sa `feuille` et sa `ligne` : c'est ce qui permet
+    de réécrire le prix au bon endroit dans un classeur multi-feuilles.
+
+    `feuilles` : None (toutes), un nom, ou une liste de noms.
 
     ── Pourquoi le classeur est ouvert DEUX FOIS ────────────────────
     Sans `data_only`, une cellule de quantité contenant une formule rend
@@ -119,93 +199,113 @@ def lire_metre_complet(chemin, feuille=None):
     part en anomalie, à saisir à la main.
     """
     wb = load_workbook(chemin)                    # formules — cf. cartouche
-    ws = wb[feuille] if feuille else wb.active
 
     # Second classeur : les valeurs mises en cache par Excel. Il ne sert
     # QU'À LIRE, et n'est jamais sauvegardé.
     try:
         wb_valeurs = load_workbook(chemin, data_only=True)
-        ws_valeurs = wb_valeurs[feuille] if feuille else wb_valeurs.active
     except Exception:
-        ws_valeurs = None
+        wb_valeurs = None
 
+    noms = [n for n in _feuilles_a_lire(wb, feuilles) if n in wb.sheetnames]
     postes, anomalies, vus = [], [], {}
-    for row in ws.iter_rows(min_row=1, max_row=ws.max_row):
-        code = row[COL_CODE - 1].value
-        if not isinstance(code, str) or not RE_CODE_POSTE.match(code.strip()):
-            continue
-        code = code.strip()
-        numero = row[0].row
-        designation = (row[COL_DESIGNATION - 1].value or "")
-        qte = row[COL_QUANTITE - 1].value
 
-        # ── Quantité calculée par formule ────────────────────
-        if isinstance(qte, str) and qte.lstrip().startswith("="):
-            cache = (ws_valeurs.cell(numero, COL_QUANTITE).value
-                      if ws_valeurs is not None else None)
-            if isinstance(cache, (int, float)):
-                anomalies.append(_anomalie(
-                    "quantite_formule", code, numero,
-                    f"Quantité calculée par la formule « {qte} ». Valeur "
-                    f"en cache utilisée : {cache:g}. À vérifier."))
-                qte = cache
-            else:
-                anomalies.append(_anomalie(
-                    "quantite_illisible", code, numero,
-                    f"Quantité calculée par la formule « {qte} », sans "
-                    f"valeur en cache — le classeur n'a jamais été ouvert "
-                    f"dans Excel. Poste NON chiffré : ouvrir puis "
-                    f"enregistrer le fichier, ou saisir la quantité."))
+    for nom in noms:
+        ws = wb[nom]
+        ws_valeurs = (wb_valeurs[nom]
+                       if wb_valeurs is not None and nom in wb_valeurs.sheetnames
+                       else None)
+
+        for row in ws.iter_rows(min_row=1, max_row=ws.max_row):
+            if len(row) < COL_QUANTITE:
+                continue
+            brut = row[COL_CODE - 1].value
+            if not est_code_poste(brut):
+                continue
+            code = brut.strip()
+            numero = row[0].row
+            designation = (row[COL_DESIGNATION - 1].value or "")
+            unite = (row[COL_UNITE - 1].value or "")
+            qte = row[COL_QUANTITE - 1].value
+
+            # Une ligne sans quantité NI désignation NI unité n'est
+            # probablement pas un poste : un titre, une référence, un
+            # numéro d'article. On ne l'invente pas en anomalie.
+            ressemble = bool(str(designation).strip()) or bool(str(unite).strip())
+
+            # ── Quantité calculée par formule ────────────────────
+            if isinstance(qte, str) and qte.lstrip().startswith("="):
+                cache = (ws_valeurs.cell(numero, COL_QUANTITE).value
+                          if ws_valeurs is not None else None)
+                if isinstance(cache, (int, float)):
+                    anomalies.append(_anomalie(
+                        "quantite_formule", code, numero,
+                        f"Quantité calculée par la formule « {qte} ». Valeur "
+                        f"en cache utilisée : {cache:g}. À vérifier.", nom))
+                    qte = cache
+                else:
+                    anomalies.append(_anomalie(
+                        "quantite_illisible", code, numero,
+                        f"Quantité calculée par la formule « {qte} », sans "
+                        f"valeur en cache — le classeur n'a jamais été ouvert "
+                        f"dans Excel. Poste NON chiffré : ouvrir puis "
+                        f"enregistrer le fichier, ou saisir la quantité.", nom))
+                    continue
+
+            if not isinstance(qte, (int, float)):
+                if ressemble:
+                    anomalies.append(_anomalie(
+                        "quantite_absente", code, numero,
+                        f"Aucune quantité lisible (cellule : {qte!r}). "
+                        f"Poste NON chiffré.", nom))
                 continue
 
-        if not isinstance(qte, (int, float)):
-            anomalies.append(_anomalie(
-                "quantite_absente", code, numero,
-                f"Aucune quantité lisible (cellule : {qte!r}). "
-                f"Poste NON chiffré."))
-            continue
+            if qte < 0:
+                anomalies.append(_anomalie(
+                    "quantite_negative", code, numero,
+                    f"Quantité négative ({qte:g}). Poste NON chiffré.", nom))
+                continue
 
-        if qte < 0:
-            anomalies.append(_anomalie(
-                "quantite_negative", code, numero,
-                f"Quantité négative ({qte:g}). Poste NON chiffré."))
-            continue
+            if qte == 0:
+                anomalies.append(_anomalie(
+                    "quantite_nulle", code, numero,
+                    "Quantité nulle — poste « pour mémoire » ou oubli du "
+                    "pouvoir adjudicateur. Chiffré à 0 €, à confirmer.", nom))
 
-        if qte == 0:
-            anomalies.append(_anomalie(
-                "quantite_nulle", code, numero,
-                "Quantité nulle — poste « pour mémoire » ou oubli du "
-                "pouvoir adjudicateur. Chiffré à 0 €, à confirmer."))
+            if code in vus:
+                # Deux lignes pour un même code : on ne choisit PAS à la
+                # place de l'utilisateur, mais on ne l'ignore plus en
+                # silence. Le cas le plus fréquent est une feuille
+                # « Récapitulatif » qui reprend les codes des lots :
+                # la chiffrer aussi doublerait le montant de l'offre.
+                ou = vus[code]
+                anomalies.append(_anomalie(
+                    "code_duplique", code, numero,
+                    f"Ce code figure déjà en « {ou[0]} » ligne {ou[1]}. "
+                    f"Seule la première occurrence est chiffrée ; la "
+                    f"quantité de celle-ci ({qte:g}) est ignorée. Si cette "
+                    f"feuille est un récapitulatif, la décocher.", nom))
+                continue
+            vus[code] = (nom, numero)
 
-        if code in vus:
-            # Deux lignes pour un même code : on ne choisit PAS à la
-            # place de l'utilisateur, mais on ne l'ignore plus en
-            # silence — le total dépend de la ligne retenue.
-            anomalies.append(_anomalie(
-                "code_duplique", code, numero,
-                f"Ce code apparaît déjà ligne {vus[code]}. Seule la "
-                f"première occurrence est chiffrée ; la quantité de "
-                f"celle-ci ({qte:g}) est ignorée."))
-            continue
-        vus[code] = numero
-
-        postes.append({
-            "code": code,
-            "designation": designation.strip(),
-            "nature": (row[COL_NATURE - 1].value or "").strip(),
-            "unite": (row[COL_UNITE - 1].value or "").strip(),
-            "quantite": float(qte),
-            "ligne": numero,
-        })
+            postes.append({
+                "code": code,
+                "designation": str(designation).strip(),
+                "nature": str(row[COL_NATURE - 1].value or "").strip(),
+                "unite": str(unite).strip(),
+                "quantite": float(qte),
+                "ligne": numero,
+                "feuille": nom,
+            })
 
     wb.close()
-    return {"postes": postes, "anomalies": anomalies}
+    return {"postes": postes, "anomalies": anomalies, "feuilles": noms}
 
 
-def lire_metre(chemin, feuille=None):
+def lire_metre(chemin, feuilles=None):
     """Les seuls postes lisibles. Voir lire_metre_complet() pour ce qui
     a été écarté — et il vaut mieux le regarder."""
-    return lire_metre_complet(chemin, feuille)["postes"]
+    return lire_metre_complet(chemin, feuilles)["postes"]
 
 
 def remplir_metre(
@@ -214,7 +314,7 @@ def remplir_metre(
     mapping=None,
     params=None,
     tva=None,
-    feuille=None,
+    feuilles=None,
 ):
     """
     Recopie le métré imposé et y écrit les prix unitaires de la bibliothèque.
@@ -244,9 +344,8 @@ def remplir_metre(
 
     shutil.copyfile(chemin_metre, chemin_sortie)
     wb = load_workbook(chemin_sortie)   # PAS de data_only : cf. cartouche
-    ws = wb[feuille] if feuille else wb.active
 
-    lecture = lire_metre_complet(chemin_sortie, feuille)
+    lecture = lire_metre_complet(chemin_sortie, feuilles)
     postes, anomalies = lecture["postes"], lecture["anomalies"]
 
     chiffres, non_couverts, ecarts_unite = [], [], []
@@ -282,7 +381,12 @@ def remplir_metre(
             )
             continue
 
-        ws.cell(row=poste["ligne"], column=COL_PU, value=ref["pu_vente"])
+        # Le prix retourne dans SA feuille : dans un classeur à un lot
+        # par onglet, tout écrire sur la première les mettrait tous au
+        # même endroit — et le pouvoir adjudicateur recevrait un
+        # classeur incohérent sans qu'aucune erreur ne soit levée.
+        wb[poste["feuille"]].cell(
+            row=poste["ligne"], column=COL_PU, value=ref["pu_vente"])
         montant = round(ref["pu_vente"] * poste["quantite"], 2)
         h = round(ref["heures_mo"] * poste["quantite"], 2)
         total_ht += montant
@@ -291,6 +395,7 @@ def remplir_metre(
             {
                 "code": poste["code"],
                 "code_ouv": code_ouv,
+                "feuille": poste["feuille"],
                 "designation": poste["designation"],
                 "unite": poste["unite"],
                 "quantite": poste["quantite"],
@@ -317,6 +422,7 @@ def remplir_metre(
         "chiffres": chiffres,
         "non_couverts": non_couverts,
         "ecarts_unite": ecarts_unite,
+        "feuilles": lecture["feuilles"],
         "vides": [p["code"] for p in non_couverts] + [e["code"] for e in ecarts_unite],
         "total_ht": total_ht,
         "tva_taux": taux,
