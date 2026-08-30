@@ -5,7 +5,7 @@ autre assistant, autre développeur. Il donne le contexte, l'état réel, les
 décisions structurantes et — surtout — les pièges déjà payés. Le `README.md`
 documente l'outil ; celui-ci documente *le travail*.
 
-Dernière mise à jour : 30 août 2026 · 43 commits · 206 tests au vert.
+Dernière mise à jour : 30 août 2026 · 46 commits · 214 tests au vert.
 
 ---
 
@@ -199,6 +199,10 @@ l'écran avec celui du moteur.
 - `insert_rows` ne décale pas les formules — ancrer ligne par ligne
 - lire une quantité issue d'une formule demande **deux ouvertures** du
   classeur ; sans ça des postes disparaissent en silence
+- et la seconde ouverture doit viser la colonne **détectée**, pas celle de
+  la disposition par défaut : la quantité trouvée en G, son cache cherché
+  en F, et le poste ressortait « quantité illisible » alors que la valeur
+  était là. Un poste sans prix rend l'offre irrégulière (art. 76)
 
 **Streamlit**
 - `st.cache_data` sans clé sur une fonction qui dépend des paramètres : le
@@ -258,6 +262,15 @@ l'app sur l'ancien comportement sans le dire.
 
 En cas d'écran rouge après un push : **Manage app → Reboot app**.
 
+**Ce qui s'écrit et ce qui se lit ne se replient pas pareil.** Un champ
+qu'on LIT peut se replier sur une valeur par défaut : si elle est fausse,
+la lecture produit une anomalie visible. Le champ qu'on ÉCRIT — la
+colonne du PU, la seule — ne le peut pas : un repli faux met le prix
+par-dessus une autre colonne du pouvoir adjudicateur, et personne ne le
+voit. D'où la règle : **PU inconnu, on n'écrit pas**, les postes
+ressortent sans prix avec leur montant à porter à la main. Refuser se
+voit, se tromper de colonne, non.
+
 **Ergonomie mobile** — le chef d'entreprise travaille au téléphone.
 Un `st.data_editor` de 49 lignes est inutilisable au doigt : taper dans une
 cellule, valider, en sortir — chaque geste rate une fois sur deux, et une
@@ -268,6 +281,15 @@ correction qui ne « prend » pas ne se voit pas. Remplacé partout par
 production (un terme de lexique, puis des écarts de calibration) : le test
 cassait dès que l'utilisateur s'en servait. **Asserter des relations, pas des
 littéraux.**
+
+**Tester les combinaisons, pas seulement les cas** — les deux défauts
+ci-dessus ont survécu à une suite qui couvrait chacune de leurs moitiés :
+« colonne déplacée » passait, « quantité en formule » passait, les deux
+ensemble perdaient le poste. De même, des colonnes numériques existaient
+sans qu'aucune n'atteigne le seuil, et `min()` levait sur une séquence
+vide. D'où un **classeur de torture** dans la suite : plusieurs feuilles
++ colonnes déplacées + quantité en formule + récapitulatif, d'un seul
+tenant. Un audit du dépôt les a trouvés ; les tests isolés, non.
 
 ---
 
@@ -294,7 +316,7 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-**206 tests.** Excel se skippe sans openpyxl, l'interface sans streamlit.
+**214 tests.** Excel se skippe sans openpyxl, l'interface sans streamlit.
 L'écriture GitHub est testée avec un dépôt simulé : la suite ne touche jamais
 au réseau. L'interface est testée par `AppTest`, qui **exécute vraiment le
 script**. Trois tests portent sur le notebook Colab, dont un qui vérifie que

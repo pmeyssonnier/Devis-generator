@@ -165,13 +165,21 @@ def detecter_par_contenu(ws, ligne_debut=1):
 
     trouvees = {"code": colonne_code}
 
-    if nombres_par_colonne:
-        # La quantité est remplie ; le prix unitaire, lui, est vide —
-        # c'est nous qui devons l'écrire. La première colonne numérique
-        # à droite du code est donc la quantité.
-        trouvees["quantite"] = min(
-            c for c, n in nombres_par_colonne.items()
-            if n >= max(3, 0.5 * len(lignes_de_poste)))
+    # La quantité est remplie ; le prix unitaire, lui, est vide — c'est
+    # nous qui devons l'écrire. La première colonne numérique à droite
+    # du code est donc la quantité.
+    #
+    # Le seuil se teste À PART : des colonnes numériques peuvent exister
+    # sans qu'aucune l'atteigne — trois nombres épars dans un classeur
+    # de dix postes. `min()` recevait alors une séquence vide et levait,
+    # ce qui faisait planter le dépôt du métré au lieu de rendre une
+    # détection incomplète. Aucune colonne assez remplie : la quantité
+    # reste indéterminée, et le mécanisme des champs manquants prend le
+    # relais — il est fait pour ça.
+    assez_remplies = [c for c, n in nombres_par_colonne.items()
+                       if n >= max(3, 0.5 * len(lignes_de_poste))]
+    if assez_remplies:
+        trouvees["quantite"] = min(assez_remplies)
     if textes_par_colonne:
         # La désignation est la colonne de texte la plus fournie.
         trouvees["designation"] = max(textes_par_colonne,
@@ -217,14 +225,24 @@ def detecter(ws):
     # on propose la colonne juste après la quantité — proposition
     # explicitement signalée comme telle, car écrire un prix dans la
     # mauvaise colonne rendrait une offre silencieusement fausse.
+    # Jamais une colonne DÉJÀ ATTRIBUÉE : l'unité nommée « Unité » en G,
+    # la quantité trouvée en F, et la déduction donnait « PU = G ». Le
+    # prix s'écrivait par-dessus l'unité — six « m2 » remplacés par des
+    # montants dans le classeur rendu au pouvoir adjudicateur, et aucun
+    # avertissement puisque la détection se croyait complète. Refuser la
+    # déduction laisse le champ manquant, ce qui déclenche la demande de
+    # validation : ne pas savoir doit se voir.
     if "pu" not in champs and "quantite" in champs:
-        champs["pu"] = champs["quantite"] + 1
-        origines["pu"] = "position"
+        candidate = champs["quantite"] + 1
+        if candidate not in champs.values():
+            champs["pu"] = candidate
+            origines["pu"] = "position"
 
     # L'unité précède presque toujours la quantité.
     if "unite" not in champs and "quantite" in champs:
         candidate = champs["quantite"] - 1
-        if candidate > champs.get("code", 0):
+        if candidate > champs.get("code", 0) \
+                and candidate not in champs.values():
             champs["unite"] = candidate
             origines["unite"] = "position"
 
