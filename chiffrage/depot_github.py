@@ -226,6 +226,43 @@ def commiter_parametres(contenu, depot, token, branche="main",
     return _ecrire(chemin, contenu, message, depot, token, branche, sha)
 
 
+def commiter_validations(validations, depot, token, branche="main",
+                          chemin=None, dossier=None,
+                          message="data(validations): rendements validés "
+                                   "depuis l'interface",
+                          _lire=lire_fichier, _ecrire=ecrire_fichier):
+    """
+    Ajoute des validations de rendement, en FUSIONNANT avec le distant.
+
+    Même sémantique que le journal des relevés, et pour la même raison :
+    une validation s'ajoute à l'histoire d'un rendement, elle ne la
+    remplace pas. Un rendement validé en mars puis revalidé en septembre
+    garde ses deux bulletins — c'est la seule trace de ce qui a bougé.
+    """
+    from .moteur import fusionner_validations
+
+    chemin = chemin or f"{chemins_entreprise(dossier)['tables']}/validations.json"
+    texte_distant, sha = _lire(chemin, depot, token, branche)
+    distant = []
+    if texte_distant:
+        try:
+            distant = json.loads(texte_distant)
+        except ValueError as err:
+            raise ErreurDepot(
+                f"{chemin} est présent dans le dépôt mais illisible : "
+                f"{err}. Le corriger à la main avant de commiter d'ici."
+            ) from err
+    if not isinstance(distant, list):
+        raise ErreurDepot(
+            f"{chemin} n'est pas une liste de validations. Le corriger à "
+            f"la main avant de commiter d'ici.")
+
+    fusion = fusionner_validations(distant, validations)
+    texte = json.dumps(fusion, ensure_ascii=False, indent=2) + "\n"
+    url = _ecrire(chemin, texte, message, depot, token, branche, sha)
+    return fusion, url
+
+
 def commiter_releves(releves, depot, token, branche="main",
                       chemin=None, dossier=None,
                       message="data(releves): relevés de chantier ajoutés "

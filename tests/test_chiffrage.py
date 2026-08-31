@@ -825,16 +825,41 @@ def test_un_poste_dominant_est_signale(offre_type):
     assert "40.20" in [a["poste"] for a in poids]
 
 
-def test_part_des_rendements_non_valides_est_mesuree():
-    """17,9 % sur le métré type — sous le seuil, mais la valeur doit
-    être calculée : c'est elle qui dira quand la calibration presse."""
+def test_jamais_confronte_sinforme_mais_nalerte_pas():
+    """Aujourd'hui AUCUN rendement n'a été confronté à un chantier : la
+    part vaut 1. Une alerte qui se déclenche sur chaque offre ne dit plus
+    rien — celle-ci est donc une INFO, pas un avertissement."""
     b = moteur.calcul_bordereau()
     lignes = [{"code_ouv": c, "qte": 10, "pu_vente": b[c]["pu_vente"]}
-              for c in ("40.20", "90.10")]      # 90.10 est à valider
+              for c in ("40.20", "90.10")]
     rapport = controle_prix.analyser(lignes, b)
-    assert 0 < rapport["indicateurs"]["part_non_validee"] < 1
-    assert [a for a in rapport["alertes"]
-            if a["code"] == "rendements_non_valides"]
+
+    assert rapport["indicateurs"]["part_non_validee"] == pytest.approx(1.0)
+    dites = [a for a in rapport["alertes"]
+              if a["code"] == "rendements_non_valides"]
+    assert dites and dites[0]["niveau"] == controle_prix.INFO
+    assert rapport["indicateurs"]["part_a_revalider"] == pytest.approx(0.0)
+
+
+def test_valide_puis_modifie_est_signale_a_part(monkeypatch):
+    """Celui-là est anormal : un rendement confirmé sur des chantiers a
+    été corrigé depuis. Il doit sortir en ATTENTION, distinct du reste."""
+    b = moteur.calcul_bordereau()
+    lignes = [{"code_ouv": c, "qte": 10, "pu_vente": b[c]["pu_vente"]}
+              for c in ("40.20", "90.10")]
+
+    monkeypatch.setattr(controle_prix, "codes_par_statut", lambda: {
+        "valide": {"90.10"}, "a_valider": set(), "a_revalider": {"40.20"}})
+    rapport = controle_prix.analyser(lignes, b)
+
+    assert 0 < rapport["indicateurs"]["part_a_revalider"] < 1
+    alarmantes = [a for a in rapport["alertes"]
+                   if a["code"] == "rendements_a_revalider"]
+    assert alarmantes and alarmantes[0]["niveau"] == controle_prix.ATTENTION
+    # Le poste porte les deux drapeaux : à revalider est un cas de non
+    # validé, pas une catégorie à côté.
+    poste = next(p for p in rapport["postes"] if p["code_ouv"] == "40.20")
+    assert poste["rendement_a_revalider"] and poste["rendement_a_valider"]
 
 
 def test_ecart_a_l_historique_est_signale(offre_type):
@@ -2112,6 +2137,205 @@ def test_le_journal_suit_aussi_le_dossier():
     commiter_releves([], "d/r", "jeton", dossier="donnees/wemmel",
                       _lire=_lire, _ecrire=lambda *a, **k: "url")
     assert vus["chemin"] == "donnees/wemmel/releves.json"
+
+
+# ── 26. Valider un rendement ───────────────────────────────────────────────
+#
+# Valider n'est pas déclarer, c'est CONSTATER : des heures réelles,
+# divisées par des quantités réelles, retombent près de la valeur en
+# place. Trois relevés, 15 % d'écart au plus, et une confirmation à la
+# main — décidé avec le chef d'entreprise.
+
+def _avec_releves(code, n, facteur=1.0):
+    """Des tables portant `n` relevés concordants (ou décalés) sur un
+    ouvrage."""
+    import copy  # noqa: PLC0415
+
+    t = copy.deepcopy(moteur.tables_courantes())
+    en_place = moteur.rendement_en_place(code, t)
+    t["releves"] = [
+        {"code_ouv": code, "date": f"2026-09-{i:02d}", "chantier": f"C{i}",
+          "quantite": 10.0, "heures": 10.0 * en_place * facteur}
+        for i in range(1, n + 1)]
+    return t
+
+
+def test_sans_releve_rien_ne_se_valide():
+    """L'état ORDINAIRE d'un outil jeune, et il doit se dire tel quel."""
+    t = _avec_releves("20.10", 0)
+    etat = moteur.statut_rendement("20.10", t)
+    assert etat["statut"] == "a_valider"
+    assert "jamais confronté" in etat["motif"]
+    assert moteur.validation_possible("20.10", t)["possible"] is False
+
+
+@pytest.mark.parametrize("n", [1, 2])
+def test_moins_de_trois_releves_ne_suffisent_pas(n):
+    """Un seul chantier est une observation, pas une moyenne."""
+    t = _avec_releves("20.10", n)
+    peut = moteur.validation_possible("20.10", t)
+    assert peut["possible"] is False
+    assert peut["n"] == n
+    assert str(moteur.RELEVES_POUR_VALIDER - n) in peut["manque"]
+
+
+def test_trois_releves_concordants_permettent_de_valider():
+    t = _avec_releves("20.10", moteur.RELEVES_POUR_VALIDER)
+    peut = moteur.validation_possible("20.10", t)
+    assert peut["possible"] is True
+    assert abs(peut["ecart"]) <= moteur.ECART_MAX_VALIDATION
+
+
+def test_un_ecart_trop_grand_renvoie_a_la_correction():
+    """Au-delà de 15 %, ce n'est pas la validation qui manque : c'est le
+    rendement qui est faux."""
+    t = _avec_releves("20.10", 3, facteur=1.5)
+    peut = moteur.validation_possible("20.10", t)
+    assert peut["possible"] is False
+    assert "corriger" in peut["manque"]
+
+
+def test_le_bulletin_porte_la_valeur_validee():
+    """LE champ qui compte. Sans lui, une correction ultérieure
+    passerait inaperçue et la validation mentirait."""
+    t = _avec_releves("20.10", 3)
+    bulletin = moteur.valider_rendement("20.10", t, note="façades planes",
+                                         aujourdhui="2026-09-15")
+    assert bulletin["rendement"] == pytest.approx(
+        moteur.rendement_en_place("20.10", t))
+    assert bulletin["n"] == 3
+    assert bulletin["note"] == "façades planes"
+    assert bulletin["date"] == "2026-09-15"
+
+
+def test_on_ne_peut_pas_valider_ce_qui_ne_peut_pas_letre():
+    t = _avec_releves("20.10", 1)
+    with pytest.raises(ValueError):
+        moteur.valider_rendement("20.10", t)
+
+
+def test_une_validation_rend_le_rendement_valide():
+    t = _avec_releves("20.10", 3)
+    t["validations"] = [moteur.valider_rendement("20.10", t)]
+    assert moteur.statut_rendement("20.10", t)["statut"] == "valide"
+    assert "20.10" not in moteur.codes_non_valides(t)
+
+
+def test_corriger_apres_coup_remet_le_doute_tout_seul():
+    """Le cas que rien ne remarquait : une validation porte sur une
+    VALEUR, pas sur un ouvrage."""
+    t = _avec_releves("20.10", 3)
+    t["validations"] = [moteur.valider_rendement("20.10", t)]
+
+    for c in t["composition"]:
+        if c["code_ouv"] == "20.10" and t["ressources_par_code"][
+                c["code_res"]]["type_res"] == "MO":
+            c["qte_res"] *= 1.3
+
+    etat = moteur.statut_rendement("20.10", t)
+    assert etat["statut"] == "a_revalider"
+    assert etat["rendement_valide"] != etat["rendement_actuel"]
+    assert "20.10" in moteur.codes_par_statut(t)["a_revalider"]
+
+
+def test_un_doute_pose_a_la_main_lemporte_sur_une_validation():
+    """Celui qui se méfie en sait plus que le fichier."""
+    t = _avec_releves("20.10", 3)
+    t["validations"] = [moteur.valider_rendement("20.10", t)]
+    t["ouvrages_a_valider"] = sorted(set(t["ouvrages_a_valider"]) | {"20.10"})
+
+    etat = moteur.statut_rendement("20.10", t)
+    assert etat["statut"] == "a_valider"
+    assert "à la main" in etat["motif"]
+
+
+def test_la_validation_la_plus_recente_fait_foi():
+    """Un rendement validé en mars puis revalidé en septembre a une
+    histoire ; on garde les deux bulletins, le dernier tranche."""
+    t = _avec_releves("20.10", 3)
+    en_place = moteur.rendement_en_place("20.10", t)
+    t["validations"] = [
+        {"code_ouv": "20.10", "date": "2026-03-01", "rendement": en_place * 2,
+          "n": 3},
+        {"code_ouv": "20.10", "date": "2026-09-01", "rendement": en_place,
+          "n": 3},
+    ]
+    assert moteur.validation_de("20.10", t)["date"] == "2026-09-01"
+    assert moteur.statut_rendement("20.10", t)["statut"] == "valide"
+
+
+def test_les_trois_etats_couvrent_tous_les_ouvrages():
+    """Aucun ouvrage ne doit tomber entre deux états."""
+    par_statut = moteur.codes_par_statut()
+    total = sum(len(v) for v in par_statut.values())
+    assert total == len(biblio.OUVRAGES)
+    assert set(par_statut) == {"valide", "a_valider", "a_revalider"}
+
+
+def test_les_validations_fusionnent_sans_perdre_ni_doubler():
+    mien = [{"code_ouv": "20.10", "date": "2026-09-01", "rendement": 0.55}]
+    sien = [{"code_ouv": "40.20", "date": "2026-08-01", "rendement": 0.90}]
+    fusion = moteur.fusionner_validations(sien, mien, list(sien))
+    assert len(fusion) == 2
+    assert [v["date"] for v in fusion] == sorted(v["date"] for v in fusion)
+
+
+def test_le_journal_des_validations_fusionne_au_commit():
+    """Une validation s'ajoute à l'histoire d'un rendement, elle ne la
+    remplace pas."""
+    import json as _json  # noqa: PLC0415
+
+    from chiffrage.depot_github import commiter_validations  # noqa: PLC0415
+
+    distant = [{"code_ouv": "20.10", "date": "2026-03-01", "rendement": 0.55}]
+    ecrit = {}
+
+    def _lire(chemin, depot, token, branche):
+        ecrit["chemin"] = chemin
+        return _json.dumps(distant), "sha"
+
+    def _ecrire(chemin, contenu, message, depot, token, branche, sha):
+        ecrit["contenu"] = _json.loads(contenu)
+        return "url"
+
+    mien = [{"code_ouv": "20.10", "date": "2026-09-01", "rendement": 0.60}]
+    commiter_validations(mien, "d/r", "jeton", _lire=_lire, _ecrire=_ecrire)
+
+    assert ecrit["chemin"] == "chiffrage/data/validations.json"
+    assert len(ecrit["contenu"]) == 2, "l'histoire du rendement a été perdue"
+
+
+def test_une_bibliotheque_sans_validations_demarre(tmp_path):
+    """Table optionnelle, comme le journal : aucun prix n'en dépend."""
+    import shutil  # noqa: PLC0415
+    from pathlib import Path as _Path  # noqa: PLC0415
+
+    source = _Path(biblio.__file__).parent / "data"
+    for fichier in source.glob("*.json"):
+        if fichier.name != "validations.json":
+            shutil.copy(fichier, tmp_path)
+
+    tables = biblio.charger_tables(tmp_path)
+    assert tables["validations"] == []
+
+
+def test_une_validation_sans_valeur_est_refusee(tmp_path):
+    """Une validation sans rendement ne prouve rien : c'est une
+    corruption, pas une absence."""
+    import json as _json  # noqa: PLC0415
+    import shutil  # noqa: PLC0415
+    from pathlib import Path as _Path  # noqa: PLC0415
+
+    source = _Path(biblio.__file__).parent / "data"
+    for fichier in source.glob("*.json"):
+        shutil.copy(fichier, tmp_path)
+    (tmp_path / "validations.json").write_text(
+        _json.dumps([{"code_ouv": "20.10", "date": "2026-09-01"}]),
+        encoding="utf-8")
+
+    with pytest.raises(biblio.BibliothequeInvalide) as err:
+        biblio.charger_tables(tmp_path)
+    assert "rendement" in str(err.value)
 
 
 # ── 20. Reprendre un devis enregistré ──────────────────────────────────────
