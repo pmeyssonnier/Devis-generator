@@ -30,7 +30,14 @@ lui-même.
 """
 
 from .bibliotheque import LOTS, PARAMS, RESSOURCES_PAR_CODE
-from .moteur import calcul_bordereau, codes_par_statut, coefficient_k
+from .moteur import (
+    PRIX_ANCIEN_JOURS,
+    calcul_bordereau,
+    codes_par_statut,
+    coefficient_k,
+    materiaux_de,
+    mois,
+)
 
 # ── Repères de relecture ────────────────────────────
 # Aucun n'est une règle : ils décident seulement de ce qui est
@@ -51,6 +58,16 @@ SEUILS = {
     # Part reposant sur des rendements VALIDÉS PUIS MODIFIÉS. Le seuil est
     # bas exprès : un seul poste dans ce cas mérite un coup d'œil.
     "part_a_revalider": 0.05,
+    # Part des ACHATS de l'offre dont le prix a plus de six mois, et part
+    # dont le prix n'est pas daté du tout. Deux mesures et deux niveaux,
+    # comme pour les rendements : « pas daté » est l'état ordinaire
+    # aujourd'hui, et une alerte qui se déclenche sur chaque offre ne dit
+    # plus rien.
+    "part_prix_ancien": 0.20,
+    "part_prix_sans_date": 0.20,
+    # En deçà, les matériaux ne font pas le prix : les dater n'apprendrait
+    # rien, et le dire ferait du bruit pour rien.
+    "poids_materiaux": 0.05,
 }
 
 CRITIQUE, ATTENTION, INFO = "critique", "attention", "info"
@@ -138,7 +155,7 @@ def rabais_maximal(chiffres, bordereau, params=None):
 
 
 def analyser(chiffres, bordereau=None, params=None, rabais=0.0,
-              historique=None):
+              historique=None, aujourdhui=None):
     """
     Relit une offre chiffrée et remonte ce qui mérite un œil humain.
 
@@ -148,8 +165,8 @@ def analyser(chiffres, bordereau=None, params=None, rabais=0.0,
     historique : {code_ouv: pu pratiqué ailleurs} — facultatif.
                  Vide tant qu'aucun marché n'a été déposé.
 
-    Retourne {indicateurs, alertes[], postes[]}. Les alertes sont
-    triées du plus grave au plus léger.
+    Retourne {indicateurs, alertes[], postes[], materiaux[]}. Les
+    alertes sont triées du plus grave au plus léger.
     """
     b = bordereau if bordereau is not None else calcul_bordereau(params)
     historique = historique or {}
@@ -269,6 +286,50 @@ def analyser(chiffres, bordereau=None, params=None, rabais=0.0,
             "soit la correction est juste et il faut la reconfronter, "
             "soit elle est de trop."))
 
+    # ── L'âge des prix d'achat ──────────────────────
+    # Un rendement se valide, un prix d'achat périme. Et on ne regarde
+    # QUE les matériaux que cette offre-ci consomme : signaler les
+    # trente-cinq de la bibliothèque, c'est se faire ignorer.
+    materiaux = materiaux_de(chiffres, aujourdhui=aujourdhui)
+    achats_mat = sum(m["montant"] for m in materiaux)
+    part_materiaux = achats_mat / total if total else 0.0
+    anciens = [m for m in materiaux if m["ancien"]]
+    sans_date = [m for m in materiaux if m["age"] is None]
+    part_prix_ancien = (sum(m["montant"] for m in anciens) / achats_mat
+                         if achats_mat else 0.0)
+    part_prix_sans_date = (sum(m["montant"] for m in sans_date) / achats_mat
+                            if achats_mat else 0.0)
+    materiaux_comptent = part_materiaux >= SEUILS["poids_materiaux"]
+
+    if materiaux_comptent and part_prix_ancien >= SEUILS["part_prix_ancien"]:
+        cites = ", ".join(
+            f"{m['code_res']} {m['libelle_res'].lower()} ({mois(m['age'])} mois)"
+            for m in anciens[:3])
+        alertes.append(_alerte(
+            ATTENTION, "prix_anciens",
+            f"{len(anciens)} matériau(x) sur {len(materiaux)} ont un prix de "
+            f"plus de {mois(PRIX_ANCIEN_JOURS)} mois — "
+            f"{part_prix_ancien * 100:.0f} % des achats de l'offre",
+            f"{cites}. Ces prix étaient justes le jour où ils ont été "
+            f"relevés ; rien ne dit qu'ils tiennent encore, et le "
+            f"fournisseur ne prévient pas. À reconfronter à une offre "
+            f"avant de déposer — un marché public ne se renégocie pas."))
+
+    # Aucune ressource n'est datée aujourd'hui : cette information doit
+    # se dire, mais en INFO. C'est le même raisonnement que pour les
+    # rendements jamais confrontés — l'état ordinaire d'un outil jeune
+    # n'est pas une alerte.
+    if materiaux_comptent \
+            and part_prix_sans_date >= SEUILS["part_prix_sans_date"]:
+        alertes.append(_alerte(
+            INFO, "prix_sans_date",
+            f"{part_prix_sans_date * 100:.0f} % des achats de l'offre "
+            f"reposent sur des prix dont on ignore la date",
+            "Un prix sans date n'est pas un prix frais : c'est un prix "
+            "d'origine inconnue. Corriger un prix d'achat depuis "
+            "l'atelier le date — les dates viendront d'elles-mêmes, "
+            "matériau par matériau, à mesure des offres fournisseurs."))
+
     tries = sorted(postes, key=lambda p: -p["montant"])
     concentration = sum(p["part"] for p in tries[:3])
 
@@ -283,11 +344,17 @@ def analyser(chiffres, bordereau=None, params=None, rabais=0.0,
             "rabais_maximal": rabais_maximal(chiffres, b, params),
             "part_non_validee": round(part_non_validee, 4),
             "part_a_revalider": round(part_a_revalider, 4),
+            "achats_materiaux": round(achats_mat, 2),
+            "part_materiaux": round(part_materiaux, 4),
+            "part_prix_ancien": round(part_prix_ancien, 4),
+            "part_prix_sans_date": round(part_prix_sans_date, 4),
+            "nb_materiaux": len(materiaux),
             "concentration_top3": round(concentration, 4),
             "nb_postes": len(postes),
         },
         "alertes": alertes,
         "postes": tries,
+        "materiaux": materiaux,
     }
 
 

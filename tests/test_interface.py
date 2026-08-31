@@ -1457,3 +1457,94 @@ def test_une_bibliotheque_plus_ancienne_que_lapp_ne_plante_pas(AppTest,
     at = AppTest.from_file(str(APP), default_timeout=240)
     at.run()
     assert not at.exception, [e.value for e in at.exception]
+
+
+# ── D'où vient un prix d'achat, et de quand ────────────────────────────────
+#
+# Un rendement se valide sur des chantiers ; un prix d'achat périme, et
+# il périme en silence. Les dates n'arrivent donc pas d'un import : elles
+# se posent ici, une à la fois, quand une offre fournisseur passe.
+
+def _texte(at, cle):
+    return [t for t in at.text_input if t.key == cle][0]
+
+
+def test_un_prix_non_date_le_dit(app):
+    """Aucune ressource n'est datée à ce jour, et l'écran doit le dire
+    plutôt que de laisser croire que le prix est du jour."""
+    assert any("non daté" in c.value for c in app.caption)
+
+
+def test_corriger_un_prix_le_date_et_dit_dou_il_vient(app):
+    """Le geste qui fait vivre le mécanisme : un coup de fil au
+    fournisseur, un prix corrigé, sa provenance écrite."""
+    liste = [s for s in app.selectbox if s.key == "corr_res"][0]
+    code = liste.value
+    avant = _tables(app)["ressources_par_code"][code]["pu_res"]
+
+    _champ(app, "corr_res_valeur").set_value(avant + 7.0).run()
+    _texte(app, "corr_res_source").set_value("offre Untel du 12/03").run()
+    [b for b in app.button if b.key == "corr_res_ok"][0].click().run()
+    assert not app.exception, [e.value for e in app.exception]
+
+    corrigee = _tables(app)["ressources_par_code"][code]
+    assert corrigee["pu_res"] == pytest.approx(avant + 7.0)
+    assert corrigee["source"] == "offre Untel du 12/03"
+    # La date est celle du champ, pas une constante : ce qui compte est
+    # qu'elle soit lisible par le moteur et donne un âge.
+    from chiffrage.moteur import age_prix  # noqa: PLC0415
+    assert age_prix(corrigee) is not None
+
+
+def test_un_clic_par_reflexe_ne_date_rien(app):
+    """Une fausse fraîcheur serait pire que pas de date du tout : elle
+    se lirait comme une garantie. Sans prix changé ni provenance
+    écrite, « Appliquer » ne date rien."""
+    liste = [s for s in app.selectbox if s.key == "corr_res"][0]
+    code = liste.value
+    [b for b in app.button if b.key == "corr_res_ok"][0].click().run()
+
+    assert "date_prix" not in _tables(app)["ressources_par_code"][code]
+
+
+def test_reconfirmer_un_prix_inchange_le_redate(app):
+    """Le cas le plus fréquent après un coup de fil : le fournisseur
+    tient son prix. Rien ne change, et pourtant on en sait plus
+    qu'hier — encore faut-il que ça s'enregistre."""
+    liste = [s for s in app.selectbox if s.key == "corr_res"][0]
+    code = liste.value
+    avant = _tables(app)["ressources_par_code"][code]["pu_res"]
+
+    _texte(app, "corr_res_source").set_value("tarif 2026 confirmé").run()
+    [b for b in app.button if b.key == "corr_res_ok"][0].click().run()
+
+    apres = _tables(app)["ressources_par_code"][code]
+    assert apres["pu_res"] == pytest.approx(avant), "le prix n'a pas changé"
+    assert apres["date_prix"], "la reconfirmation n'a pas été datée"
+    # Et l'app doit la COMPTER comme une correction : ne comparer que les
+    # prix la laisserait invisible, donc perdue au rafraîchissement.
+    assert _corrigees(app) == 1, (
+        "une redatation ne compte pas comme une correction et se perdra")
+
+
+def _corrigees(at):
+    """Ce que l'atelier affiche sous « Valeurs corrigées »."""
+    return int([m for m in at.metric
+                 if "corrigées" in (m.label or "")][0].value)
+
+
+def test_le_champ_de_provenance_suit_la_ressource_choisie(app):
+    """Même piège que pour le prix : un widget à clé garde SA valeur.
+    Une source laissée dans la case s'écrirait sur la ressource
+    suivante — et une provenance fausse vaut moins que pas de
+    provenance."""
+    liste = [s for s in app.selectbox if s.key == "corr_res"][0]
+    _texte(app, "corr_res_source").set_value("offre Untel du 12/03").run()
+    [b for b in app.button if b.key == "corr_res_ok"][0].click().run()
+
+    autre = next(r["code_res"] for r in _tables(app)["ressources"]
+                  if r["code_res"] != liste.value)
+    [s for s in app.selectbox if s.key == "corr_res"][0].set_value(autre).run()
+
+    assert _texte(app, "corr_res_source").value == ""
+    assert "source" not in _tables(app)["ressources_par_code"][autre]
