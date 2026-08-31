@@ -34,6 +34,7 @@ def test_bibliotheque_coherente():
     assert anomalies == {
         "res_orphelines": [],
         "ouv_orphelins": [],
+        "releves_orphelins": [],
         "ouv_sans_compo": [],
         "ouv_sans_mo": [],
         "codes_dupliques": [],
@@ -1413,7 +1414,7 @@ def test_commit_des_parametres_n_additionne_rien():
 # ── 17. Les tables sont des données, pas du code ─────
 @pytest.fixture
 def data_copiee(tmp_path):
-    import shutil
+    import shutil  # noqa: PLC0415
 
     from chiffrage.bibliotheque import DOSSIER_DATA
 
@@ -1671,6 +1672,234 @@ def test_un_releve_lit_les_tables_qu_on_lui_donne():
     hors_session = moteur.releve_rendement(code, quantite=1, heures=1)
     assert r["rendement_actuel"] == pytest.approx(
         2 * hors_session["rendement_actuel"], abs=1e-4)
+
+
+# ── 22. Journal des relevés de chantier ────────────────────────────────────
+def _tables_avec(releves):
+    import copy  # noqa: PLC0415
+
+    t = copy.deepcopy(moteur.tables_courantes())
+    t["releves"] = releves
+    return t
+
+
+def _rel(code, date, chantier, quantite, heures):
+    return {"code_ouv": code, "date": date, "chantier": chantier,
+             "quantite": quantite, "heures": heures}
+
+
+def test_sans_releve_le_constate_est_none_et_non_zero():
+    """« Aucun chantier relevé » et « rendement de zéro » sont deux
+    choses opposées. Les confondre ferait passer une bibliothèque
+    jamais confrontée au réel pour une bibliothèque à main-d'œuvre
+    gratuite."""
+    assert moteur.rendement_constate("20.10", tables=_tables_avec([])) is None
+    assert moteur.releves_de("20.10", tables=_tables_avec([])) == []
+
+
+def test_le_constate_pondere_par_les_quantites():
+    """Σheures / Σquantités, pas la moyenne des rendements : 2 m2 en 3 h
+    et 40 m2 en 20 h ne pèsent pas pareil, et une moyenne simple
+    donnerait au tout petit chantier le poids du grand."""
+    tables = _tables_avec([
+        _rel("20.10", "2026-08-01", "Renan 35", 2, 3),
+        _rel("20.10", "2026-08-20", "Wemmel", 40, 20),
+    ])
+    c = moteur.rendement_constate("20.10", tables=tables)
+
+    assert c["n"] == 2
+    assert c["rendement"] == pytest.approx(23 / 42, abs=1e-4)
+    moyenne_simple = (3 / 2 + 20 / 40) / 2
+    assert abs(c["rendement"] - moyenne_simple) > 0.4, (
+        "la pondération ne change rien : le test ne prouve pas grand-chose")
+    # Le constaté reste entre le plus rapide et le plus lent.
+    assert c["mini"] <= c["rendement"] <= c["maxi"]
+
+
+def test_le_constate_se_compare_au_rendement_en_place():
+    """C'est l'écart qui dit s'il y a matière à corriger."""
+    code = _un_ouvrage(1)
+    actuel = sum(c["qte_res"] for c in biblio.COMPOSITION
+                  if c["code_ouv"] == code
+                  and biblio.RESSOURCES_PAR_CODE[
+                      c["code_res"]]["type_res"] == "MO")
+    tables = _tables_avec([_rel(code, "2026-08-01", "Renan 35",
+                                 10, 10 * actuel)])
+    c = moteur.rendement_constate(code, tables=tables)
+    assert c["ecart"] == pytest.approx(0.0, abs=1e-3)
+
+
+def test_un_releve_ne_change_aucun_prix():
+    """Le journal est une PREUVE, pas un réglage. S'il alimentait le
+    bordereau, une saisie de chantier ferait bouger des prix sans
+    qu'aucun écran ne l'annonce — et une table absente les ferait
+    bouger dans l'autre sens."""
+    code = _un_ouvrage(1)
+    avant = moteur.calcul_bordereau()[code]["pu_vente"]
+    tables = _tables_avec([_rel(code, "2026-08-01", "Renan 35", 1, 99)])
+    assert moteur.calcul_bordereau(tables=tables)[code]["pu_vente"] == avant
+
+
+def test_les_releves_sortent_dans_l_ordre_du_temps():
+    tables = _tables_avec([
+        _rel("20.10", "2026-08-20", "Wemmel", 40, 20),
+        _rel("20.10", "2026-08-01", "Renan 35", 2, 3),
+    ])
+    dates = [r["date"] for r in moteur.releves_de("20.10", tables=tables)]
+    assert dates == sorted(dates)
+
+
+def test_le_rendement_de_chaque_releve_est_calcule_pas_stocke():
+    """Stocker le quotient en ferait une seconde vérité, qui finirait
+    par diverger de ses deux termes."""
+    tables = _tables_avec([_rel("20.10", "2026-08-01", "Renan 35", 12, 7)])
+    assert "rendement" not in tables["releves"][0]
+    assert moteur.releves_de("20.10", tables=tables)[0]["rendement"] == (
+        pytest.approx(7 / 12, abs=1e-4))
+
+
+def test_les_releves_dun_autre_ouvrage_ne_sen_melent_pas():
+    tables = _tables_avec([
+        _rel("20.10", "2026-08-01", "Renan 35", 12, 7),
+        _rel("40.20", "2026-08-01", "Renan 35", 30, 40),
+    ])
+    assert moteur.rendement_constate("20.10", tables=tables)["n"] == 1
+
+
+def test_fusionner_ajoute_sans_perdre_ni_doubler():
+    """Un journal s'AJOUTE, il ne s'écrase pas : deux téléphones peuvent
+    relever le même soir. Mais le même relevé saisi deux fois est une
+    seule observation."""
+    mien = [_rel("20.10", "2026-08-30", "Wemmel", 40, 20)]
+    sien = [_rel("40.20", "2026-08-01", "Renan 35", 12, 7)]
+    fusion = moteur.fusionner_releves(sien, mien, list(sien))
+
+    assert len(fusion) == 2, "un doublon a été gardé, ou une observation perdue"
+    assert {r["chantier"] for r in fusion} == {"Wemmel", "Renan 35"}
+    dates = [r["date"] for r in fusion]
+    assert dates == sorted(dates)
+
+
+def test_un_releve_sur_un_ouvrage_supprime_est_signale_pas_fatal():
+    """Une preuve devenue muette doit se voir — mais elle ne porte aucun
+    prix, donc elle n'empêche rien : la perdre serait pire que la
+    garder."""
+    anomalies = moteur.controle_coherence()
+    assert anomalies["releves_orphelins"] == []
+    assert "releves_orphelins" in anomalies
+
+
+# ── 23. La table des relevés est optionnelle, les prix ne le sont pas ───────
+def test_une_bibliotheque_sans_le_fichier_de_releves_demarre(tmp_path):
+    """Sur Streamlit Cloud, un push ne redémarre pas le processus :
+    l'app peut lire des tables plus anciennes qu'elle. Refuser de
+    démarrer pour un journal absent — dont aucun prix ne dépend —
+    serait une panne inventée."""
+    import shutil  # noqa: PLC0415
+    from pathlib import Path  # noqa: PLC0415
+
+    source = Path(biblio.__file__).parent / "data"
+    for fichier in source.glob("*.json"):
+        if fichier.name != "releves.json":
+            shutil.copy(fichier, tmp_path)
+
+    tables = biblio.charger_tables(tmp_path)
+    assert tables["releves"] == []
+    assert tables["ouvrages"], "le reste de la bibliothèque doit être là"
+
+
+def test_une_table_de_prix_absente_refuse_toujours_de_demarrer(tmp_path):
+    """Le raisonnement du repli ne s'étend PAS à une table de prix :
+    absente, elle ne dégraderait pas le résultat, elle rendrait des
+    offres à zéro présentées comme normales."""
+    import shutil  # noqa: PLC0415
+    from pathlib import Path  # noqa: PLC0415
+
+    source = Path(biblio.__file__).parent / "data"
+    for fichier in source.glob("*.json"):
+        if fichier.name != "ressources.json":
+            shutil.copy(fichier, tmp_path)
+
+    with pytest.raises(biblio.BibliothequeInvalide):
+        biblio.charger_tables(tmp_path)
+
+
+@pytest.mark.parametrize("bancal, motif", [
+    ({"code_ouv": "20.10", "date": "2026-08-01", "chantier": "",
+       "quantite": 12, "heures": 7}, "chantier"),
+    ({"code_ouv": "20.10", "date": "2026-08-01", "chantier": "X",
+       "quantite": 0, "heures": 7}, "quantite"),
+    ({"code_ouv": "20.10", "date": "2026-08-01", "chantier": "X",
+       "quantite": 12, "heures": -1}, "heures"),
+])
+def test_un_releve_malforme_est_refuse_au_chargement(tmp_path, bancal, motif):
+    """Un fichier PRÉSENT mais bancal est une corruption, pas une
+    absence : là, on lève. Un relevé sans provenance ne prouve rien."""
+    import json as _json  # noqa: PLC0415
+    import shutil  # noqa: PLC0415
+    from pathlib import Path  # noqa: PLC0415
+
+    source = Path(biblio.__file__).parent / "data"
+    for fichier in source.glob("*.json"):
+        shutil.copy(fichier, tmp_path)
+    (tmp_path / "releves.json").write_text(
+        _json.dumps([bancal]), encoding="utf-8")
+
+    with pytest.raises(biblio.BibliothequeInvalide) as err:
+        biblio.charger_tables(tmp_path)
+    assert motif in str(err.value)
+
+
+def test_le_journal_fusionne_au_lieu_d_ecraser():
+    """La seule table qui s'AJOUTE. Deux téléphones peuvent relever le
+    même soir : un PUT sans fusion effacerait l'observation de l'autre
+    sans rien dire — une demi-journée de chantier perdue, invisible."""
+    import json as _json  # noqa: PLC0415
+
+    from chiffrage.depot_github import commiter_releves  # noqa: PLC0415
+
+    distant = [{"code_ouv": "20.10", "date": "2026-08-01",
+                 "chantier": "Renan 35", "quantite": 2, "heures": 3}]
+    ecrit = {}
+
+    def _lire(chemin, depot, token, branche):
+        return _json.dumps(distant), "sha-distant"
+
+    def _ecrire(chemin, contenu, message, depot, token, branche, sha):
+        ecrit["contenu"] = _json.loads(contenu)
+        ecrit["sha"] = sha
+        return "https://github.com/commit"
+
+    mien = [{"code_ouv": "40.20", "date": "2026-08-30", "chantier": "Wemmel",
+              "quantite": 40, "heures": 20},
+             dict(distant[0])]          # le même relevé, ressaisi
+    fusion, url = commiter_releves(mien, "d/r", "jeton",
+                                    _lire=_lire, _ecrire=_ecrire)
+
+    assert len(ecrit["contenu"]) == 2, "un relevé a été perdu ou doublé"
+    assert {r["chantier"] for r in ecrit["contenu"]} == {"Renan 35", "Wemmel"}
+    # Le sha relu juste avant fait échouer l'écriture si quelqu'un est
+    # passé entre temps.
+    assert ecrit["sha"] == "sha-distant"
+    assert fusion == ecrit["contenu"]
+
+
+def test_un_journal_distant_illisible_arrete_l_ecriture():
+    """Fusionner avec un fichier corrompu écraserait ce qu'il contient
+    encore. Mieux vaut refuser et le faire corriger à la main."""
+    from chiffrage.depot_github import (  # noqa: PLC0415
+        ErreurDepot,
+        commiter_releves,
+    )
+
+    def _lire(chemin, depot, token, branche):
+        return "{ pas du json", "sha"
+
+    def _ecrire(*a, **k):
+        raise AssertionError("rien ne doit être écrit")
+
+    with pytest.raises(ErreurDepot):
+        commiter_releves([], "d/r", "jeton", _lire=_lire, _ecrire=_ecrire)
 
 
 # ── 20. Reprendre un devis enregistré ──────────────────────────────────────

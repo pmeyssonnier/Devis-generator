@@ -42,6 +42,7 @@ from chiffrage.depot_github import (
     ErreurDepot,
     commiter_lexique,
     commiter_parametres,
+    commiter_releves,
     commiter_table,
 )
 from chiffrage.justification_xlsx import exporter_justification
@@ -75,6 +76,8 @@ from chiffrage.moteur import (
     devis,
     fiche_prix,
     releve_rendement,
+    rendement_constate,
+    releves_de,
     tables_courantes,
 )
 from chiffrage.parametres import serialiser
@@ -145,6 +148,18 @@ def _a_valider(tables):
     honnête, contrairement à un prix qu'il ne faut jamais deviner.
     """
     return list(tables.get("ouvrages_a_valider") or [])
+
+
+def _releves(tables):
+    """Le journal des chantiers, quelle que soit la version d'où viennent
+    ces tables.
+
+    Même parade que `_a_valider`, pour la même raison : un déploiement
+    Streamlit Cloud ne redémarre pas toujours le processus, et l'app
+    peut lire des tables plus anciennes qu'elle. Aucun prix n'en
+    dépend — un journal vide est un repli honnête.
+    """
+    return list(tables.get("releves") or [])
 
 
 def _code_du_libelle(libelle):
@@ -1285,6 +1300,45 @@ with onglet_biblio:
                         # valeur. Pas de `st.rerun()` — le champ sera rendu
                         # avec cette valeur dans cette exécution-ci.
                         st.session_state.corr_rend_valeur = propose
+
+                    # ── Garder le relevé ───────────
+                    # Reporter un chiffre ne garde rien : le lendemain,
+                    # plus personne ne sait d'où venaient ces 0,583 ni
+                    # sur quel chantier. Un rendement corrigé sans sa
+                    # provenance est un rendement qu'il faudra
+                    # re-inventer à la prochaine séance.
+                    st.divider()
+                    col_ch, col_dt = st.columns([3, 2])
+                    chantier = col_ch.text_input(
+                        "Chantier", key="releve_chantier",
+                        placeholder="Av. Ernest Renan 35")
+                    jour = col_dt.date_input(
+                        "Date", value=date.today(), key="releve_date",
+                        format="DD/MM/YYYY")
+                    if st.button(
+                        "📌 Enregistrer ce relevé",
+                        key="releve_garder", width="stretch",
+                        disabled=not chantier.strip(),
+                        help="Le relevé rejoint le journal de chantier. Il "
+                              "ne corrige AUCUN prix : c'est une preuve, "
+                              "pas un réglage.",
+                    ):
+                        tables.setdefault("releves", []).append({
+                            "code_ouv": ligne["code_ouv"],
+                            "date": f"{jour:%Y-%m-%d}",
+                            "chantier": chantier.strip(),
+                            "quantite": float(qte_faite),
+                            "heures": float(heures),
+                        })
+                        st.session_state.releve_enregistre = (
+                            f"Relevé gardé : {qte_faite:g} {unite_ouv} en "
+                            f"{heures:.2f} h sur « {chantier.strip()} ».")
+                        st.rerun()
+                    if not chantier.strip():
+                        st.caption(
+                            "Le nom du chantier manque : un relevé sans "
+                            "provenance ne prouve rien, et ne se relit pas "
+                            "dans six mois.")
             else:
                 st.caption(
                     "Quantité réalisée et heures passées : le rendement "
@@ -1303,6 +1357,15 @@ with onglet_biblio:
             st.session_state.corr_rend_repere = repere
             st.session_state.corr_rend_valeur = float(ligne["qte_res"])
 
+        # Le report du rendement constaté vient du bloc plus bas, qui ne
+        # peut pas écrire dans le champ : à ce moment-là il est déjà
+        # instancié, et Streamlit refuse. Il dépose donc sa valeur et
+        # relance ; elle est reprise ICI, après le repère, pour que
+        # celui-ci ne l'écrase pas au passage.
+        reporte = st.session_state.pop("constate_a_reporter", None)
+        if reporte is not None:
+            st.session_state.corr_rend_valeur = float(reporte)
+
         col_val, col_btn = st.columns([2, 1])
         valeur = col_val.number_input(
             f"Heures par {unite_ouv}",
@@ -1315,6 +1378,62 @@ with onglet_biblio:
         ancienne = origine["composition"][choix]["qte_res"]
         if abs(ligne["qte_res"] - ancienne) > 1e-9:
             st.caption(f"Corrigé : {ancienne:.3f} → **{ligne['qte_res']:.3f}** h")
+
+        # Un message affiché juste avant un `st.rerun()` est effacé avant
+        # d'être lu : il se range dans l'état, et ressort ici.
+        garde = st.session_state.pop("releve_enregistre", None)
+        if garde:
+            st.success(garde, icon="📌")
+
+        # ── Ce que les chantiers en disent ─────
+        constate = rendement_constate(ligne["code_ouv"], tables=tables)
+        if constate:
+            st.markdown(
+                f"**{constate['n']} relevé(s)** sur cet ouvrage — "
+                f"{constate['quantite']:g} {unite_ouv} en "
+                f"{constate['heures']:.1f} h, soit "
+                f"**{constate['rendement']:.3f} h/{unite_ouv}** "
+                f"({constate['ecart'] * 100:+.0f} % contre la bibliothèque)."
+                if constate["ecart"] is not None else
+                f"**{constate['n']} relevé(s)** — "
+                f"{constate['rendement']:.3f} h/{unite_ouv}.")
+            if constate["n"] > 1 and constate["maxi"] > constate["mini"]:
+                # Un agrégat seul se prendrait pour une mesure. L'étendue
+                # dit si les chantiers se ressemblent ou pas du tout.
+                st.caption(
+                    f"Du plus rapide au plus lent : {constate['mini']:.3f} à "
+                    f"{constate['maxi']:.3f} h/{unite_ouv}. L'agrégat est "
+                    f"Σheures / Σquantités — le grand chantier pèse plus "
+                    f"que le petit, comme il se doit.")
+            elif constate["n"] == 1:
+                st.caption(
+                    "Un seul chantier : c'est une observation, pas encore "
+                    "une moyenne.")
+            if st.button(
+                f"↑ Reporter le constaté ({constate['rendement']:.3f} "
+                f"h/{unite_ouv})",
+                key="constate_reporter", width="stretch",
+            ):
+                st.session_state.constate_a_reporter = round(
+                    constate["rendement"], 3)
+                st.rerun()
+            with st.expander(f"Voir les {constate['n']} relevé(s)"):
+                st.dataframe(
+                    [{"Date": r.get("date", ""),
+                       "Chantier": r.get("chantier", ""),
+                       f"Fait ({unite_ouv})": r["quantite"],
+                       "Heures": r["heures"],
+                       f"h/{unite_ouv}": r["rendement"]}
+                      for r in releves_de(ligne["code_ouv"], tables=tables)],
+                    hide_index=True, width="stretch",
+                    column_config={
+                        f"h/{unite_ouv}": st.column_config.NumberColumn(
+                            format="%.3f")})
+        else:
+            st.caption(
+                "Aucun relevé de chantier sur cet ouvrage. Le rendement "
+                "ci-dessus vient de la documentation reconstruite, pas "
+                "d'une observation.")
 
         # ── Lever le doute ─────────────────────
         # Le ⚠️ ne dit pas « prix faux », il dit « rendement jamais
@@ -1500,12 +1619,20 @@ with onglet_biblio:
     # ferait apparaître aucun bouton d'enregistrement, et le travail serait
     # perdu au rafraîchissement suivant.
     modifs_valid = sorted(_a_valider(tables)) != sorted(_a_valider(origine))
+    # Un relevé n'est pas une correction : il ne change aucun prix, et
+    # n'apparaîtrait donc dans aucune comparaison de valeurs. Sans cette
+    # ligne, enregistrer un relevé ne ferait apparaître aucun bouton et
+    # le chantier serait perdu au rafraîchissement — le même défaut que
+    # pour la levée de doute.
+    releves_neufs = [r for r in _releves(tables) if r not in _releves(origine)]
 
     avant = calibration(params)
     apres = calibration(params, tables=tables)
 
     m1, m2, m3 = st.columns(3)
     reperes = ([f"+{len(ouvrages_neufs)} ouvrage(s)"] if ouvrages_neufs else [])
+    if releves_neufs:
+        reperes.append(f"+{len(releves_neufs)} relevé(s)")
     if modifs_valid:
         avant_val, apres_val = (len(_a_valider(origine)),
                                  len(_a_valider(tables)))
@@ -1521,7 +1648,8 @@ with onglet_biblio:
                sum(1 for r in apres["lignes"] if abs(r["ecart"]) > 0.15),
                help="Cible : moins de 15 % d'écart sur CHAQUE ligne.")
 
-    if modifs_res or modifs_compo or ouvrages_neufs or modifs_valid:
+    if modifs_res or modifs_compo or ouvrages_neufs or modifs_valid \
+            or releves_neufs:
         st.dataframe(
             [{"Devis": r["devis"], "Objet": r["objet"],
                "Forfait vendu": r["forfait"], "Calculé": r["calcule"],
@@ -1544,6 +1672,8 @@ with onglet_biblio:
             a_ecrire["composition"] = tables["composition"]
         if modifs_valid:
             a_ecrire["ouvrages_a_valider"] = sorted(_a_valider(tables))
+        if releves_neufs:
+            a_ecrire["releves"] = _releves(tables)
         if ouvrages_neufs:
             # Le lot se déduit du code : on ne le réécrit pas dans le
             # fichier, sinon les deux pourraient diverger.
@@ -1567,6 +1697,18 @@ with onglet_biblio:
                     with st.spinner("Écriture dans le dépôt…"):
                         try:
                             for nom, contenu in a_ecrire.items():
+                                if nom == "releves":
+                                    # Le journal de chantier est la seule
+                                    # table qui s'AJOUTE : deux téléphones
+                                    # peuvent relever le même soir, et
+                                    # écraser perdrait l'observation de
+                                    # l'autre. Les tables de prix, elles,
+                                    # sont des touts cohérents : elles
+                                    # s'écrasent, après relecture du sha.
+                                    commiter_releves(
+                                        contenu, depot, jeton,
+                                        branche=github.get("branche", "main"))
+                                    continue
                                 commiter_table(
                                     nom,
                                     json.dumps(contenu, ensure_ascii=False,

@@ -21,6 +21,7 @@ from .bibliotheque import (
     OUVRAGES_A_VALIDER,
     OUVRAGES_PAR_CODE,
     PARAMS,
+    RELEVES,
     RESSOURCES_PAR_CODE,
 )
 
@@ -62,6 +63,11 @@ def tables_courantes(tables=None):
         # parce qu'une séance de calibration la modifie — on lève le
         # doute sur un rendement au moment même où on le corrige.
         "ouvrages_a_valider": OUVRAGES_A_VALIDER,
+        # Même raison, et même prudence : le journal des chantiers ne
+        # porte aucun prix, mais il voyage avec les tables parce qu'une
+        # séance en ajoute — on enregistre le relevé au moment où on
+        # s'en sert pour corriger.
+        "releves": RELEVES,
         "ressources_par_code": RESSOURCES_PAR_CODE,
         "ouvrages_par_code": OUVRAGES_PAR_CODE,
     }
@@ -371,6 +377,91 @@ def releve_rendement(code_ouv, quantite, heures, tables=None):
     }
 
 
+def releves_de(code_ouv, tables=None):
+    """Les relevés de chantier d'un ouvrage, du plus ancien au plus récent.
+
+    Chacun porte son `rendement`, CALCULÉ et non stocké : heures /
+    quantité. Le stocker en ferait une seconde vérité, qui finirait par
+    diverger de ses deux termes.
+    """
+    t = tables_courantes(tables)
+    retenus = [r for r in (t.get("releves") or [])
+                if r.get("code_ouv") == code_ouv
+                and isinstance(r.get("quantite"), (int, float))
+                and isinstance(r.get("heures"), (int, float))
+                and r["quantite"] > 0 and r["heures"] > 0]
+    return sorted(
+        (dict(r, rendement=round(r["heures"] / r["quantite"], 4))
+          for r in retenus),
+        key=lambda r: (str(r.get("date") or ""), str(r.get("chantier") or "")))
+
+
+def rendement_constate(code_ouv, tables=None):
+    """Ce que les chantiers disent du rendement d'un ouvrage.
+
+    L'agrégat est Σheures / Σquantités, PAS la moyenne des rendements :
+    2 m2 en 3 h et 40 m2 en 20 h ne pèsent pas pareil, et une moyenne
+    simple donnerait au tout petit chantier le même poids qu'au grand.
+
+    Rend aussi `n`, `mini` et `maxi` : un seul relevé n'est pas une
+    vérité, et deux relevés très écartés ne se résument pas à leur
+    milieu. Un nombre seul se prendrait pour une mesure.
+
+    Rend None quand aucun chantier n'a été relevé — c'est le cas
+    ordinaire aujourd'hui, et il doit se distinguer d'un rendement de
+    zéro.
+    """
+    releves = releves_de(code_ouv, tables)
+    if not releves:
+        return None
+
+    t = tables_courantes(tables)
+    par_res = t["ressources_par_code"]
+    actuel = sum(c["qte_res"] for c in t["composition"]
+                  if c["code_ouv"] == code_ouv
+                  and par_res[c["code_res"]]["type_res"] == "MO")
+
+    heures = sum(r["heures"] for r in releves)
+    quantite = sum(r["quantite"] for r in releves)
+    constate = heures / quantite
+    rendements = [r["rendement"] for r in releves]
+    return {
+        "code_ouv": code_ouv,
+        "n": len(releves),
+        "heures": round(heures, 4),
+        "quantite": round(quantite, 4),
+        "rendement": round(constate, 4),
+        "mini": min(rendements),
+        "maxi": max(rendements),
+        "rendement_actuel": round(actuel, 4),
+        "ecart": round((constate - actuel) / actuel, 4) if actuel else None,
+    }
+
+
+def fusionner_releves(*sources):
+    """Réunit plusieurs jeux de relevés sans en perdre ni en doubler.
+
+    Un journal de chantier s'AJOUTE, il ne s'écrase pas : deux téléphones
+    peuvent enregistrer le même soir, et la sémantique « le dernier qui
+    écrit gagne » — juste pour une table de prix, qui est un tout
+    cohérent — perdrait ici l'observation de l'autre.
+
+    Deux relevés identiques sur les cinq champs sont la même observation
+    saisie deux fois, pas deux chantiers : on n'en garde qu'un.
+    """
+    cle = lambda r: (str(r.get("code_ouv")), str(r.get("date")),  # noqa: E731
+                      str(r.get("chantier")), r.get("quantite"), r.get("heures"))
+    fusion, vus = [], set()
+    for source in sources:
+        for rel in source or []:
+            if cle(rel) in vus:
+                continue
+            vus.add(cle(rel))
+            fusion.append(rel)
+    return sorted(fusion, key=lambda r: (str(r.get("date") or ""),
+                                          str(r.get("code_ouv") or "")))
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # 6. Calibration sur les devis historiques
 # ═══════════════════════════════════════════════════════════════════════════
@@ -458,6 +549,7 @@ def controle_coherence():
       · ouv_sans_mo      : ouvrage sans main-d'œuvre (suspect hors fournitures)
       · codes_dupliques  : code_res ou code_ouv en double
       · lots_inconnus    : ouvrage dont le lot n'est pas dans LOTS
+      · releves_orphelins: relevé de chantier sur un ouvrage supprimé depuis
     """
     codes_res = set(RESSOURCES_PAR_CODE)
     codes_ouv = set(OUVRAGES_PAR_CODE)
@@ -491,9 +583,17 @@ def controle_coherence():
             vus.add(c)
         return dup
 
+    # Un relevé pointant un ouvrage disparu n'empêche aucun chiffrage :
+    # il ne porte pas de prix. Mais c'est une preuve devenue muette, et
+    # elle doit se voir plutôt que de dormir dans le fichier.
+    releves_orphelins = sorted(
+        {str(r.get("code_ouv")) for r in RELEVES
+          if r.get("code_ouv") not in codes_ouv})
+
     return {
         "res_orphelines": res_orphelines,
         "ouv_orphelins": ouv_orphelins,
+        "releves_orphelins": releves_orphelins,
         "ouv_sans_compo": sorted(ouv_sans_compo),
         "ouv_sans_mo": sorted(ouv_sans_mo),
         "codes_dupliques": (
