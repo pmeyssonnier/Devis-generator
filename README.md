@@ -687,7 +687,62 @@ des paramètres : une bibliothèque vide ne dégraderait pas le résultat,
 elle rendrait « aucun ouvrage » pour tous les postes — une offre
 entièrement vide, présentée comme normale. L'outil refuse de démarrer.
 
-`CHIFFRAGE_DATA` permet de charger d'autres tables que celles du dépôt.
+### Une instance par entrepreneur
+
+L'outil ne se partage pas en donnant l'URL à plusieurs entreprises, et le
+frein n'est pas l'accès — c'est le **cloisonnement**. Les tables sont des
+constantes de module, chargées une fois à l'import : tous les visiteurs
+d'une même app lisent les mêmes prix. L'identité de l'entreprise est un
+seul fichier. Et surtout : une bibliothèque de prix, ce sont des taux
+horaires réels et une marge — **l'actif de l'entreprise**, pas quelque
+chose qui se montre à un confrère qui répond aux mêmes marchés.
+
+La réponse est une **instance par entrepreneur**, sur le même code.
+
+`CHIFFRAGE_DATA` désigne le dossier qui contient TOUT ce qui appartient à
+une entreprise : ses tables, son `parametres_local.json`, son
+`lexique_local.json`. Le secret `dossier` désigne le même dossier côté
+écriture. Non renseignés, rien ne bouge — le déploiement en service garde
+ses fichiers là où ils sont nés.
+
+```
+donnees/
+├── bagbatter/           CHIFFRAGE_DATA=donnees/bagbatter
+│   ├── ressources.json          · dossier = "donnees/bagbatter"
+│   ├── …
+│   ├── parametres_local.json
+│   └── lexique_local.json
+└── wemmel/              une autre app, d'autres secrets, un autre jeton
+```
+
+Une app Streamlit par entrepreneur, chacune avec :
+
+| | |
+|---|---|
+| `CHIFFRAGE_DATA` | son dossier, en variable d'environnement |
+| secret `dossier` | le même dossier, pour l'écriture |
+| secret `token` | un PAT limité à **son** dépôt de données |
+| *Settings → Sharing* | sa propre liste d'e-mails |
+
+**Les deux réglages vont ensemble.** Écrire dans un dossier que l'app ne
+lit pas ne lève rien : le commit part, l'écran dit « enregistré », et la
+correction n'est jamais relue — ça ne se verrait qu'au devis suivant.
+L'atelier refuse donc d'afficher son bouton d'enregistrement sans avoir
+d'abord signalé la discordance.
+
+**Préalable non négociable : le dépôt doit être privé.** Aujourd'hui il
+est public, ce qui est tenable tant que les prix sont reconstruits. Ça ne
+l'est plus dès qu'un entrepreneur saisit ses vrais taux horaires.
+
+Ce que ce découpage ne fait PAS : plusieurs entreprises dans une même
+app. Il faudrait tuer les constantes de module — le moteur accepte déjà
+`tables=` partout, mais `export_xlsx`, `justification_xlsx` et
+l'interface lisent encore les globales — et une vraie authentification :
+la liste d'e-mails ouvre la porte, elle ne dit pas au code **qui** est
+entré.
+
+`CHIFFRAGE_DATA` permet aussi de charger un jeu d'essai, ou de vérifier
+qu'une table corrompue est bien refusée.
 
 ---
 
@@ -898,7 +953,7 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-244 tests. Ceux de la chaîne Excel se skippent sans openpyxl, ceux de
+253 tests. Ceux de la chaîne Excel se skippent sans openpyxl, ceux de
 l'interface sans streamlit. L'écriture GitHub est testée avec un
 dépôt simulé — la suite ne touche jamais au réseau.
 

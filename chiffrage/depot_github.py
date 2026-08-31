@@ -7,7 +7,7 @@ Sert au bouton « commiter » du lexique : rendre permanent un terme
 appris, sans quitter l'interface ni écrire de Python.
 
 Des fichiers de DONNÉES uniquement — le lexique, les paramètres, les
-tables de `chiffrage/data/` — et **du JSON, jamais du code** :
+tables — et **du JSON, jamais du code** :
 le contenu vient de champs de saisie, et écrire du Python à partir
 d'une saisie serait une injection.
 
@@ -41,6 +41,37 @@ import urllib.request
 
 API = "https://api.github.com"
 DELAI = 20
+
+# Disposition historique : une seule entreprise, ses fichiers là où ils
+# sont nés. Elle reste le défaut — la déplacer casserait le déploiement
+# en service.
+DOSSIER_TABLES = "chiffrage/data"
+CHEMIN_PARAMETRES = "chiffrage/parametres_local.json"
+CHEMIN_LEXIQUE = "chiffrage/lexique_local.json"
+
+
+def chemins_entreprise(dossier=None):
+    """
+    Où vivent, DANS LE DÉPÔT, les fichiers propres à une entreprise.
+
+    Sans `dossier`, la disposition historique. Avec, tout est réuni au
+    même endroit — et c'est la condition d'une instance par entrepreneur :
+    ses prix, son identité et son lexique dans SON dossier, écrits par un
+    jeton limité à SON dépôt.
+
+    Le pendant côté lecture est la variable d'environnement
+    CHIFFRAGE_DATA, qui doit désigner le même dossier. Les deux se
+    règlent ensemble : écrire dans un dossier que l'app ne lit pas
+    perdrait les corrections sans rien dire.
+    """
+    if not dossier:
+        return {"tables": DOSSIER_TABLES,
+                 "parametres": CHEMIN_PARAMETRES,
+                 "lexique": CHEMIN_LEXIQUE}
+    d = str(dossier).strip("/")
+    return {"tables": d,
+             "parametres": f"{d}/parametres_local.json",
+             "lexique": f"{d}/lexique_local.json"}
 
 
 class ErreurDepot(RuntimeError):
@@ -141,7 +172,7 @@ def _expliquer(err, depot):
 
 
 def commiter_lexique(contenu, depot, token, branche="main",
-                      chemin="chiffrage/lexique_local.json",
+                      chemin=None,
                       message="feat(lexique): termes appris depuis l'interface",
                       _lire=lire_fichier, _ecrire=ecrire_fichier):
     """
@@ -155,6 +186,7 @@ def commiter_lexique(contenu, depot, token, branche="main",
     """
     from .lexique import fusion_a_commiter
 
+    chemin = chemin or CHEMIN_LEXIQUE
     texte_distant, sha = _lire(chemin, depot, token, branche)
     distant = {}
     if texte_distant:
@@ -174,7 +206,7 @@ def commiter_lexique(contenu, depot, token, branche="main",
 
 
 def commiter_parametres(contenu, depot, token, branche="main",
-                         chemin="chiffrage/parametres_local.json",
+                         chemin=None,
                          message="chore(parametres): réglés depuis l'interface",
                          _lire=lire_fichier, _ecrire=ecrire_fichier):
     """
@@ -189,12 +221,13 @@ def commiter_parametres(contenu, depot, token, branche="main",
     juste avant fait échouer l'écriture si quelqu'un est passé entre
     temps, plutôt que d'écraser en silence.
     """
+    chemin = chemin or CHEMIN_PARAMETRES
     _, sha = _lire(chemin, depot, token, branche)
     return _ecrire(chemin, contenu, message, depot, token, branche, sha)
 
 
 def commiter_releves(releves, depot, token, branche="main",
-                      chemin="chiffrage/data/releves.json",
+                      chemin=None, dossier=None,
                       message="data(releves): relevés de chantier ajoutés "
                                "depuis l'interface",
                       _lire=lire_fichier, _ecrire=ecrire_fichier):
@@ -212,6 +245,7 @@ def commiter_releves(releves, depot, token, branche="main",
     """
     from .moteur import fusionner_releves
 
+    chemin = chemin or f"{chemins_entreprise(dossier)['tables']}/releves.json"
     texte_distant, sha = _lire(chemin, depot, token, branche)
     distant = []
     if texte_distant:
@@ -234,7 +268,8 @@ def commiter_releves(releves, depot, token, branche="main",
 
 
 def commiter_table(nom, contenu, depot, token, branche="main",
-                    message=None, _lire=lire_fichier, _ecrire=ecrire_fichier):
+                    message=None, dossier=None,
+                    _lire=lire_fichier, _ecrire=ecrire_fichier):
     """
     Écrit une table de `chiffrage/data/` corrigée depuis l'interface.
 
@@ -244,7 +279,7 @@ def commiter_table(nom, contenu, depot, token, branche="main",
     écrit gagne, mais pas en aveugle : le `sha` relu juste avant fait
     échouer l'écriture si quelqu'un est passé entre temps.
     """
-    chemin = f"chiffrage/data/{nom}.json"
+    chemin = f"{chemins_entreprise(dossier)['tables']}/{nom}.json"
     _, sha = _lire(chemin, depot, token, branche)
     return _ecrire(
         chemin, contenu,

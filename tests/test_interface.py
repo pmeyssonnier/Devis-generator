@@ -1075,6 +1075,64 @@ def test_une_session_sans_journal_ne_plante_pas(AppTest):
     assert not at.exception, [e.value for e in at.exception]
 
 
+# ── Une instance par entrepreneur ───────────────────────────────────────────
+
+def test_la_disposition_historique_reste_le_defaut(app):
+    """Sans secret `dossier` ni CHIFFRAGE_DATA, l'app écrit exactement où
+    elle écrivait : une couture ne doit pas déménager l'existant."""
+    import streamlit_app as sa  # noqa: PLC0415
+
+    assert sa._chemins_depot({})["tables"] == "chiffrage/data"
+    assert sa._lecture_et_ecriture_concordent({}) is True
+
+
+def test_le_dossier_de_linstance_est_suivi_partout(app):
+    """Prix, identité et lexique doivent partir dans LE MÊME dossier, celui
+    auquel le jeton de cette instance est limité."""
+    import streamlit_app as sa  # noqa: PLC0415
+
+    c = sa._chemins_depot({"dossier": "donnees/wemmel"})
+    assert c["tables"] == "donnees/wemmel"
+    assert c["parametres"].startswith("donnees/wemmel/")
+    assert c["lexique"].startswith("donnees/wemmel/")
+
+
+def test_ecrire_ailleurs_que_la_ou_on_lit_est_signale(app):
+    """La panne silencieuse à éviter : le commit part, l'écran dit
+    « enregistré », et la correction n'est jamais relue. Elle ne se verrait
+    qu'au devis suivant."""
+    import streamlit_app as sa  # noqa: PLC0415
+
+    # L'app lit chiffrage/data (aucun CHIFFRAGE_DATA dans la suite) mais
+    # on lui demanderait d'écrire ailleurs.
+    assert sa._lecture_et_ecriture_concordent({"dossier": "donnees/wemmel"}) \
+        is False
+
+
+def test_le_controle_de_concordance_apparait_avant_denregistrer(AppTest,
+                                                                 monkeypatch):
+    """Le message doit être à l'écran AVANT le bouton qui écrit, pas dans
+    un journal que personne ne lit."""
+    import copy  # noqa: PLC0415
+
+    from chiffrage.moteur import tables_courantes  # noqa: PLC0415
+
+    at = AppTest.from_file(str(APP), default_timeout=240)
+    at.secrets["github"] = {"depot": "essai/depot", "token": "jeton",
+                             "dossier": "donnees/ailleurs"}
+    tables = copy.deepcopy(tables_courantes())
+    tables["ressources"][0]["pu_res"] += 7.0
+    tables["ressources_par_code"] = {r["code_res"]: r
+                                      for r in tables["ressources"]}
+    at.session_state["tables_editees"] = tables
+    at.run()
+    assert not at.exception, [e.value for e in at.exception]
+
+    assert any("n'écrirait pas là où elle lit" in e.value for e in at.error), (
+        "une correction partirait dans un dossier que l'app ne relit pas, "
+        "sans que rien ne le dise")
+
+
 # ── Retrouver un code dans la bibliothèque ──────────────────────────────────
 
 def _table(app, colonne):
