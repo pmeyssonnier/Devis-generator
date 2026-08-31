@@ -35,6 +35,7 @@ valable, seulement le reléguer.
 """
 
 import json
+import os
 import re
 import unicodedata
 from pathlib import Path
@@ -92,7 +93,24 @@ def valider_terme(terme):
 # Ce fichier est facultatif : sans lui, seules les tables ci-dessous
 # valent.
 
-CHEMIN_LOCAL = Path(__file__).resolve().parent / "lexique_local.json"
+def _chemin_local(nom):
+    """Où lire le fichier local `nom` : dans le dossier de l'entreprise
+    si CHIFFRAGE_DATA le désigne, sinon à sa place historique.
+
+    CHIFFRAGE_DATA désigne TOUT ce qui appartient à une entreprise — ses
+    tables, son identité, son lexique. C'est ce qui permet de faire
+    tourner une instance par entrepreneur sur le même code, chacune ne
+    lisant et n'écrivant que son dossier.
+
+    Non défini, rien ne bouge : le déploiement en service garde ses
+    fichiers là où ils sont nés.
+    """
+    dossier = os.environ.get("CHIFFRAGE_DATA")
+    if dossier:
+        return Path(dossier) / nom
+    return Path(__file__).resolve().parent / nom
+
+CHEMIN_LOCAL = _chemin_local("lexique_local.json")
 
 
 def charger_local(chemin=None):

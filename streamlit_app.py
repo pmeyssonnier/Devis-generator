@@ -19,6 +19,7 @@ Lancement local :
 import copy
 import hashlib
 import json
+import os
 from datetime import date, datetime
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -26,6 +27,7 @@ from tempfile import TemporaryDirectory
 import streamlit as st
 
 from chiffrage.bibliotheque import (
+    DOSSIER_DATA,
     ENTREPRISE,
     LOTS,
     MAPPING,
@@ -41,6 +43,7 @@ from chiffrage.controle_prix import analyser
 from chiffrage.detection_colonnes import CHAMPS, CHAMPS_REQUIS
 from chiffrage.depot_github import (
     ErreurDepot,
+    chemins_entreprise,
     commiter_lexique,
     commiter_parametres,
     commiter_releves,
@@ -150,6 +153,32 @@ def _a_valider(tables):
     honnête, contrairement à un prix qu'il ne faut jamais deviner.
     """
     return list(tables.get("ouvrages_a_valider") or [])
+
+
+def _chemins_depot(github):
+    """Où CETTE instance écrit dans le dépôt.
+
+    Le secret `dossier` désigne le dossier de l'entreprise ; il doit
+    désigner le même que la variable d'environnement CHIFFRAGE_DATA,
+    côté lecture. Non renseigné, c'est la disposition historique.
+    """
+    return chemins_entreprise(github.get("dossier"))
+
+
+def _lecture_et_ecriture_concordent(github):
+    """Vrai si l'app écrit là où elle lit.
+
+    Écrire dans un dossier que l'app ne lit pas ne lève rien : le commit
+    part, l'écran dit « enregistré », et la correction n'est simplement
+    jamais relue. C'est le genre de panne qui ne se voit qu'au devis
+    suivant — d'où ce contrôle, affiché avant d'écrire.
+    """
+    dossier = (github.get("dossier") or "").strip("/")
+    if not dossier:
+        # Disposition historique des deux côtés : rien à rapprocher.
+        return not os.environ.get("CHIFFRAGE_DATA")
+    lu = Path(os.environ.get("CHIFFRAGE_DATA") or DOSSIER_DATA).resolve()
+    return lu.match(f"*/{dossier}") or str(lu).endswith(dossier)
 
 
 def _releves(tables):
@@ -1689,6 +1718,16 @@ with onglet_biblio:
             github = {}
         depot, jeton = github.get("depot"), github.get("token")
 
+        if depot and jeton and not _lecture_et_ecriture_concordent(github):
+            st.error(
+                f"**Cette instance n'écrirait pas là où elle lit.** Elle lit "
+                f"`{DOSSIER_DATA}` et écrirait dans "
+                f"`{_chemins_depot(github)['tables']}`. Le commit partirait "
+                f"sans erreur et la correction ne serait jamais relue. "
+                f"Régler `CHIFFRAGE_DATA` et le secret `dossier` sur le même "
+                f"dossier avant d'enregistrer.",
+                icon="🛑")
+
         col_ok, col_raz = st.columns(2)
         with col_ok:
             if depot and jeton:
@@ -1699,6 +1738,7 @@ with onglet_biblio:
                     with st.spinner("Écriture dans le dépôt…"):
                         try:
                             for nom, contenu in a_ecrire.items():
+                                chemins = _chemins_depot(github)
                                 if nom == "releves":
                                     # Le journal de chantier est la seule
                                     # table qui s'AJOUTE : deux téléphones
@@ -1709,6 +1749,7 @@ with onglet_biblio:
                                     # s'écrasent, après relecture du sha.
                                     commiter_releves(
                                         contenu, depot, jeton,
+                                        dossier=github.get("dossier"),
                                         branche=github.get("branche", "main"))
                                     continue
                                 commiter_table(
@@ -1716,6 +1757,7 @@ with onglet_biblio:
                                     json.dumps(contenu, ensure_ascii=False,
                                                 indent=2) + "\n",
                                     depot, jeton,
+                                    dossier=github.get("dossier"),
                                     branche=github.get("branche", "main"))
                         except ErreurDepot as err:
                             st.error(str(err), icon="🛑")
@@ -1932,6 +1974,7 @@ with onglet_lexique:
                     try:
                         fusion, url = commiter_lexique(
                             None, depot, jeton,
+                            chemin=_chemins_depot(github)["lexique"],
                             branche=github.get("branche", "main"),
                         )
                     except ErreurDepot as err:
@@ -2273,6 +2316,7 @@ with onglet_params:
                 try:
                     url = commiter_parametres(
                         contenu, depot, jeton,
+                        chemin=_chemins_depot(github)["parametres"],
                         branche=github.get("branche", "main"))
                 except ErreurDepot as err:
                     st.error(str(err), icon="🛑")

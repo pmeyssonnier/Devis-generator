@@ -1983,6 +1983,137 @@ def test_lanalyse_suit_les_tables_corrigees():
     assert apres["facteur_quantites"] < avant["facteur_quantites"]
 
 
+# ── 25. Une instance par entrepreneur ──────────────────────────────────────
+#
+# Le partage n'est pas un problème d'accès mais de CLOISONNEMENT : les
+# tables sont des constantes de module, l'identité est un seul fichier, et
+# l'écriture visait un chemin en dur. Une bibliothèque de prix, ce sont
+# des taux horaires et une marge — l'actif de l'entreprise, pas quelque
+# chose qui se partage avec un confrère qui répond aux mêmes marchés.
+
+def _instance(tmp_path, nom_entreprise, fg):
+    """Le dossier d'un entrepreneur : ses tables ET son identité."""
+    import json as _json  # noqa: PLC0415
+    import shutil  # noqa: PLC0415
+    from pathlib import Path as _Path  # noqa: PLC0415
+
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    source = _Path(biblio.__file__).parent / "data"
+    for fichier in source.glob("*.json"):
+        shutil.copy(fichier, tmp_path)
+    (tmp_path / "parametres_local.json").write_text(_json.dumps({
+        "entreprise": {"nom": nom_entreprise, "adresse": "Rue d'Essai 1",
+                        "cp_ville": "1780 Wemmel", "pays": "Belgique",
+                        "tva": "BE 0999.888.777", "activite": "Rénovation"},
+        "params": {"fg": fg, "fc": 0.05, "aleas": 0.03, "marge": 0.10,
+                    "tva": 0.06, "tva_marche_public": 0.21},
+    }, ensure_ascii=False), encoding="utf-8")
+    return tmp_path
+
+
+def _dans_une_instance(dossier, code):
+    """Exécute `code` dans un interpréteur neuf, CHIFFRAGE_DATA pointé sur
+    ce dossier — les tables étant des constantes de module, deux
+    instances ne peuvent pas cohabiter dans le même processus."""
+    import os  # noqa: PLC0415
+    import subprocess  # noqa: PLC0415
+    import sys  # noqa: PLC0415
+    from pathlib import Path as _Path  # noqa: PLC0415
+
+    racine = _Path(biblio.__file__).resolve().parent.parent
+    env = dict(os.environ, CHIFFRAGE_DATA=str(dossier),
+                PYTHONPATH=str(racine))
+    fait = subprocess.run([sys.executable, "-c", code], env=env,
+                           capture_output=True, text=True, timeout=120)
+    assert fait.returncode == 0, fait.stderr
+    return fait.stdout.strip()
+
+
+def test_deux_entrepreneurs_ne_partagent_ni_prix_ni_identite(tmp_path):
+    """Le cœur du cloisonnement : même code, deux dossiers, deux mondes.
+    Sans ça, l'entrepreneur B verrait les taux horaires de A — c'est-à-dire
+    ses marges."""
+    # Séparateur explicite : la raison sociale contient des espaces.
+    code = ("from chiffrage.bibliotheque import ENTREPRISE\n"
+             "from chiffrage.moteur import coefficient_k, calcul_bordereau\n"
+             "print(ENTREPRISE['nom'], round(coefficient_k(), 4),"
+             " calcul_bordereau()['40.20']['pu_vente'], sep='|')")
+
+    a = _dans_une_instance(_instance(tmp_path / "a", "ALPHA SRL", 0.12), code)
+    b = _dans_une_instance(_instance(tmp_path / "b", "BETA SRL", 0.20), code)
+
+    nom_a, k_a, pu_a = a.split("|")
+    nom_b, k_b, pu_b = b.split("|")
+    assert (nom_a, nom_b) == ("ALPHA SRL", "BETA SRL"), (a, b)
+    assert float(k_b) > float(k_a), "les coefficients ne sont pas cloisonnés"
+    assert float(pu_b) > float(pu_a), "les prix ne sont pas cloisonnés"
+
+
+def test_sans_la_variable_rien_ne_bouge():
+    """Le déploiement en service garde ses fichiers là où ils sont nés :
+    une couture ne doit pas déménager l'existant."""
+    from chiffrage import depot_github  # noqa: PLC0415
+
+    assert biblio.ENTREPRISE["nom"] == "BAG BATTER SRL"
+    assert depot_github.chemins_entreprise() == {
+        "tables": "chiffrage/data",
+        "parametres": "chiffrage/parametres_local.json",
+        "lexique": "chiffrage/lexique_local.json",
+    }
+
+
+def test_le_dossier_reunit_les_trois_fichiers_de_lentreprise():
+    """Prix, identité et lexique au même endroit : c'est ce qui permet de
+    donner à chaque instance un jeton limité à SON dossier."""
+    from chiffrage.depot_github import chemins_entreprise  # noqa: PLC0415
+
+    c = chemins_entreprise("donnees/wemmel")
+    assert c["tables"] == "donnees/wemmel"
+    assert c["parametres"] == "donnees/wemmel/parametres_local.json"
+    assert c["lexique"] == "donnees/wemmel/lexique_local.json"
+    # Les slashs de trop ne doivent pas produire un chemin absurde.
+    assert chemins_entreprise("/donnees/wemmel/") == c
+
+
+def test_le_commit_dune_table_suit_le_dossier_de_linstance():
+    """Écrire dans `chiffrage/data` depuis l'instance d'un autre
+    entrepreneur écraserait les prix de quelqu'un d'autre."""
+    from chiffrage.depot_github import commiter_table  # noqa: PLC0415
+
+    vus = {}
+
+    def _lire(chemin, depot, token, branche):
+        vus["lu"] = chemin
+        return None, None
+
+    def _ecrire(chemin, contenu, message, depot, token, branche, sha):
+        vus["ecrit"] = chemin
+        return "url"
+
+    commiter_table("ressources", "[]", "d/r", "jeton",
+                    dossier="donnees/wemmel", _lire=_lire, _ecrire=_ecrire)
+    assert vus["lu"] == "donnees/wemmel/ressources.json"
+    assert vus["ecrit"] == vus["lu"], "on relit et on écrit au même endroit"
+
+    commiter_table("ressources", "[]", "d/r", "jeton",
+                    _lire=_lire, _ecrire=_ecrire)
+    assert vus["ecrit"] == "chiffrage/data/ressources.json"
+
+
+def test_le_journal_suit_aussi_le_dossier():
+    from chiffrage.depot_github import commiter_releves  # noqa: PLC0415
+
+    vus = {}
+
+    def _lire(chemin, depot, token, branche):
+        vus["chemin"] = chemin
+        return None, None
+
+    commiter_releves([], "d/r", "jeton", dossier="donnees/wemmel",
+                      _lire=_lire, _ecrire=lambda *a, **k: "url")
+    assert vus["chemin"] == "donnees/wemmel/releves.json"
+
+
 # ── 20. Reprendre un devis enregistré ──────────────────────────────────────
 # Le fichier relu ici a pu être édité à la main ou produit par une version
 # antérieure de la bibliothèque. Ces tests vérifient surtout qu'une donnée
