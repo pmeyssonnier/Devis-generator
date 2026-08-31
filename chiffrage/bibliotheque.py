@@ -22,6 +22,7 @@ ne s'exécute pas.
     data/mapping.json             postes d'un métré -> ouvrages
     data/ouvrages_a_valider.json  les rendements jamais confrontés au réel
     data/releves.json             ce qu'on a VU sur un chantier (optionnelle)
+    data/validations.json         un rendement confronté au réel (optionnelle)
     data/metres_histo.json        les six devis vendus, pour la calibration
 
 L'identité de l'entreprise et les coefficients de vente sont ailleurs
@@ -45,6 +46,12 @@ client. Point d'entrée pour la relecture : `moteur.calibration()`.
 ──────────────────────────────────────────────────────
 MODÈLE
 ──────────────────────────────────────────────────────
+
+    VALIDATIONS  (code_ouv, date, rendement, n, quantite, heures, note)
+                 Un rendement CONFRONTÉ au réel. Le champ qui compte est
+                 `rendement` : une validation porte sur une VALEUR, pas
+                 sur un ouvrage. Que la valeur bouge, et la validation ne
+                 vaut plus — le doute se relève de lui-même.
 
     RELEVES      (code_ouv, date, chantier, quantite, heures)
                  Une observation de chantier, pas un paramètre. Le
@@ -145,6 +152,7 @@ def charger_tables(dossier=None):
         "lots", "ressources", "ouvrages", "composition", "mapping",
         "ouvrages_a_valider", "metres_histo")}
     tables["releves"] = _charger_optionnel("releves", dossier, [])
+    tables["validations"] = _charger_optionnel("validations", dossier, [])
 
     # Le lot se déduit du code : le stocker deux fois, c'est risquer
     # qu'ils divergent. Les devis historiques reviennent du JSON en
@@ -234,6 +242,25 @@ def _controler(t):
     # relevé qui pointe un ouvrage supprimé depuis n'est pas une faute —
     # c'est une preuve périmée, et la perdre serait pire que la garder.
     # controle_coherence() la signale ; le chargeur, lui, laisse passer.
+    # Même traitement que les relevés : la forme se contrôle, la
+    # référence à un ouvrage disparu ne bloque rien.
+    if not isinstance(t["validations"], list):
+        fautes.append("validations : la table doit être une liste")
+    else:
+        for i, val in enumerate(t["validations"]):
+            if not isinstance(val, dict):
+                fautes.append(f"validation n°{i + 1} : ce n'est pas un objet")
+                continue
+            for champ in ("code_ouv", "date"):
+                if not str(val.get(champ) or "").strip():
+                    fautes.append(f"validation n°{i + 1} : « {champ} » "
+                                   f"manquant")
+            rendement = val.get("rendement")
+            if not isinstance(rendement, (int, float)) or rendement <= 0:
+                fautes.append(f"validation n°{i + 1} : rendement "
+                               f"« {rendement} » invalide — une validation "
+                               f"sans valeur ne prouve rien")
+
     if not isinstance(t["releves"], list):
         fautes.append("releves : la table doit être une liste")
     else:
@@ -267,6 +294,7 @@ COMPOSITION = _TABLES["composition"]
 MAPPING = _TABLES["mapping"]
 OUVRAGES_A_VALIDER = _TABLES["ouvrages_a_valider"]
 RELEVES = _TABLES["releves"]
+VALIDATIONS = _TABLES["validations"]
 METRES_HISTO = _TABLES["metres_histo"]
 RESSOURCES_PAR_CODE = _TABLES["ressources_par_code"]
 OUVRAGES_PAR_CODE = _TABLES["ouvrages_par_code"]

@@ -48,6 +48,7 @@ from chiffrage.depot_github import (
     commiter_parametres,
     commiter_releves,
     commiter_table,
+    commiter_validations,
 )
 from chiffrage.justification_xlsx import exporter_justification
 from chiffrage.lexique import (
@@ -83,7 +84,10 @@ from chiffrage.moteur import (
     releve_rendement,
     rendement_constate,
     releves_de,
+    statut_rendement,
     tables_courantes,
+    validation_possible,
+    valider_rendement,
 )
 from chiffrage.parametres import serialiser
 from chiffrage.suggestion import (
@@ -213,6 +217,12 @@ def _enregistrer_sur_disque(a_ecrire, dossier):
             encoding="utf-8")
         ecrits.append(chemin.name)
     return ecrits
+
+
+def _validations(tables):
+    """Le journal des validations, quelle que soit la version d'où
+    viennent ces tables. Même parade que `_releves`, même raison."""
+    return list(tables.get("validations") or [])
 
 
 def _releves(tables):
@@ -1497,6 +1507,9 @@ with onglet_biblio:
         garde = st.session_state.pop("releve_enregistre", None)
         if garde:
             st.success(garde, icon="📌")
+        faite = st.session_state.pop("validation_faite", None)
+        if faite:
+            st.success(faite, icon="✅")
 
         # ── Ce que les chantiers en disent ─────
         constate = rendement_constate(ligne["code_ouv"], tables=tables)
@@ -1548,27 +1561,60 @@ with onglet_biblio:
                 "ci-dessus vient de la documentation reconstruite, pas "
                 "d'une observation.")
 
-        # ── Lever le doute ─────────────────────
-        # Le ⚠️ ne dit pas « prix faux », il dit « rendement jamais
-        # confronté au réel ». Le lever n'est donc pas un réglage
-        # d'affichage : ça enregistre qu'un chantier a eu lieu et que les
-        # heures relevées collent. Le sens inverse existe aussi — un
-        # ouvrage sans ⚠️ n'a pas pour autant été vérifié, et poser le
-        # doute sur celui qui déraille est le début de la calibration.
+        # ── Valider le rendement ───────────────
+        # Valider n'est pas déclarer, c'est CONSTATER : des heures
+        # réelles, divisées par des quantités réelles, retombent près de
+        # la valeur en place. Trois relevés et 15 % d'écart au plus —
+        # décidé avec le chef d'entreprise. L'outil dit si c'est
+        # possible ; c'est lui qui confirme, parce qu'il est le seul à
+        # savoir si les trois chantiers se ressemblaient.
         code_courant = ligne["code_ouv"]
-        if code_courant in a_valider:
-            if st.button("✅ Rendement confirmé par un chantier réalisé",
-                          key="corr_rend_valider", width="stretch"):
+        etat = statut_rendement(code_courant, tables=tables)
+        peut = validation_possible(code_courant, tables=tables)
+
+        st.divider()
+        if etat["statut"] == "valide":
+            st.success(f"**Rendement validé** — {etat['motif']}.", icon="✅")
+        elif etat["statut"] == "a_revalider":
+            st.error(
+                f"**À revalider** — {etat['motif']}. La validation portait "
+                f"sur une valeur, et cette valeur a changé : soit la "
+                f"correction est juste et il faut la reconfronter à des "
+                f"chantiers, soit elle est de trop.", icon="🛑")
+        else:
+            st.info(f"**Pas encore validé** — {etat['motif']}.", icon="🔎")
+
+        if peut["possible"]:
+            note = st.text_input(
+                "Ce que ces chantiers ne couvrent pas (facultatif)",
+                key="valid_note",
+                placeholder="façades planes ; pas encore vérifié sur pignon")
+            if st.button(
+                f"✅ Valider ce rendement — {peut['n']} relevés, "
+                f"{abs(peut['ecart']) * 100:.0f} % d'écart",
+                key="corr_rend_valider", type="primary", width="stretch",
+            ):
+                tables.setdefault("validations", []).append(
+                    valider_rendement(code_courant, tables=tables, note=note))
+                # Une validation lève le doute posé à la main : sans ça,
+                # l'ouvrage resterait « à valider » alors qu'il vient
+                # d'être confronté à trois chantiers.
                 tables["ouvrages_a_valider"] = [
                     c for c in _a_valider(tables) if c != code_courant]
+                st.session_state.validation_faite = (
+                    f"{code_courant} validé à "
+                    f"{etat['rendement_actuel']:.3f} h, sur {peut['n']} "
+                    f"chantiers relevés.")
                 st.rerun()
-            st.caption(
-                "À cocher **après** avoir relevé les heures réelles sur un "
-                "chantier de cet ouvrage, pas avant : le ⚠️ retiré, plus "
-                "rien ne signalera que ce rendement a été inventé."
-            )
-        elif st.button("⚠️ Remettre ce rendement en doute",
-                        key="corr_rend_douter", width="stretch"):
+        elif etat["statut"] != "valide":
+            st.caption(f"Pour valider, il manque {peut['manque']}.")
+
+        # Un ouvrage sans ⚠️ n'a pas pour autant été vérifié, et poser le
+        # doute sur celui qui déraille reste le début de la calibration.
+        if code_courant not in a_valider and st.button(
+            "⚠️ Remettre ce rendement en doute",
+            key="corr_rend_douter", width="stretch",
+        ):
             tables["ouvrages_a_valider"] = sorted(
                 set(_a_valider(tables)) | {code_courant})
             st.rerun()
@@ -1738,6 +1784,8 @@ with onglet_biblio:
     # le chantier serait perdu au rafraîchissement — le même défaut que
     # pour la levée de doute.
     releves_neufs = [r for r in _releves(tables) if r not in _releves(origine)]
+    validations_neuves = [v for v in _validations(tables)
+                           if v not in _validations(origine)]
 
     avant = calibration(params)
     apres = calibration(params, tables=tables)
@@ -1746,6 +1794,8 @@ with onglet_biblio:
     reperes = ([f"+{len(ouvrages_neufs)} ouvrage(s)"] if ouvrages_neufs else [])
     if releves_neufs:
         reperes.append(f"+{len(releves_neufs)} relevé(s)")
+    if validations_neuves:
+        reperes.append(f"+{len(validations_neuves)} validation(s)")
     if modifs_valid:
         avant_val, apres_val = (len(_a_valider(origine)),
                                  len(_a_valider(tables)))
@@ -1762,7 +1812,7 @@ with onglet_biblio:
                help="Cible : moins de 15 % d'écart sur CHAQUE ligne.")
 
     if modifs_res or modifs_compo or ouvrages_neufs or modifs_valid \
-            or releves_neufs:
+            or releves_neufs or validations_neuves:
         st.dataframe(
             [{"Devis": r["devis"], "Objet": r["objet"],
                "Forfait vendu": r["forfait"], "Calculé": r["calcule"],
@@ -1787,6 +1837,8 @@ with onglet_biblio:
             a_ecrire["ouvrages_a_valider"] = sorted(_a_valider(tables))
         if releves_neufs:
             a_ecrire["releves"] = _releves(tables)
+        if validations_neuves:
+            a_ecrire["validations"] = _validations(tables)
         if ouvrages_neufs:
             # Le lot se déduit du code : on ne le réécrit pas dans le
             # fichier, sinon les deux pourraient diverger.
@@ -1821,6 +1873,12 @@ with onglet_biblio:
                         try:
                             for nom, contenu in a_ecrire.items():
                                 chemins = _chemins_depot(github)
+                                if nom == "validations":
+                                    commiter_validations(
+                                        contenu, depot, jeton,
+                                        dossier=github.get("dossier"),
+                                        branche=github.get("branche", "main"))
+                                    continue
                                 if nom == "releves":
                                     # Le journal de chantier est la seule
                                     # table qui s'AJOUTE : deux téléphones

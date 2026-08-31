@@ -29,8 +29,8 @@ figurent dans l'AR en vigueur et, le plus souvent, dans le CSC
 lui-même.
 """
 
-from .bibliotheque import LOTS, OUVRAGES_A_VALIDER, PARAMS, RESSOURCES_PAR_CODE
-from .moteur import calcul_bordereau, coefficient_k
+from .bibliotheque import LOTS, PARAMS, RESSOURCES_PAR_CODE
+from .moteur import calcul_bordereau, codes_par_statut, coefficient_k
 
 # ── Repères de relecture ────────────────────────────
 # Aucun n'est une règle : ils décident seulement de ce qui est
@@ -48,6 +48,9 @@ SEUILS = {
     "ecart_historique": 0.20,
     # Part du montant reposant sur des rendements jamais validés.
     "part_non_validee": 0.20,
+    # Part reposant sur des rendements VALIDÉS PUIS MODIFIÉS. Le seuil est
+    # bas exprès : un seul poste dans ce cas mérite un coup d'œil.
+    "part_a_revalider": 0.05,
 }
 
 CRITIQUE, ATTENTION, INFO = "critique", "attention", "info"
@@ -150,13 +153,18 @@ def analyser(chiffres, bordereau=None, params=None, rabais=0.0,
     """
     b = bordereau if bordereau is not None else calcul_bordereau(params)
     historique = historique or {}
-    a_valider = set(OUVRAGES_A_VALIDER)
+    # Le statut vient du moteur, pas d'une liste lue à part : deux
+    # définitions de « validé » finiraient par diverger, et un poste
+    # passerait pour sûr ici et douteux à l'écran.
+    par_statut = codes_par_statut()
+    a_valider = par_statut["a_valider"] | par_statut["a_revalider"]
+    a_revalider = par_statut["a_revalider"]
 
     couverture = couverture_horaire(chiffres, b, params, rabais)
     total = couverture["total"]
     alertes, postes = [], []
 
-    montant_non_valide = 0.0
+    montant_non_valide = montant_a_revalider = 0.0
 
     for ligne in chiffres:
         code = ligne["code_ouv"]
@@ -169,6 +177,8 @@ def analyser(chiffres, bordereau=None, params=None, rabais=0.0,
 
         if code in a_valider:
             montant_non_valide += montant
+        if code in a_revalider:
+            montant_a_revalider += montant
 
         postes.append({
             "code_ouv": code,
@@ -180,6 +190,7 @@ def analyser(chiffres, bordereau=None, params=None, rabais=0.0,
             "part_mat": round(part_mat, 4),
             "heures": round(ref["heures_mo"] * ligne["qte"], 2),
             "rendement_a_valider": code in a_valider,
+            "rendement_a_revalider": code in a_revalider,
         })
 
         if part >= SEUILS["poids_poste"]:
@@ -230,15 +241,33 @@ def analyser(chiffres, bordereau=None, params=None, rabais=0.0,
             "coûte de l'argent à l'entreprise. C'est un prix "
             "anormalement bas au sens propre — celui du bilan."))
 
+    # Deux mesures, et deux niveaux : les confondre ferait crier au feu
+    # sur chaque offre. « Jamais confronté » est l'état ORDINAIRE d'une
+    # bibliothèque jeune — c'est une information, pas une alerte, et une
+    # alerte qui se déclenche toujours ne dit plus rien.
     part_non_validee = montant_non_valide / total if total else 0.0
     if part_non_validee >= SEUILS["part_non_validee"]:
         alertes.append(_alerte(
-            ATTENTION, "rendements_non_valides",
+            INFO, "rendements_non_valides",
             f"{part_non_validee * 100:.0f} % du montant repose sur des "
-            f"rendements jamais validés",
-            "Ces ouvrages ont été créés pour couvrir des postes qui "
-            "restaient sans prix. Aucun n'a été confronté à un "
-            "chantier réel."))
+            f"rendements jamais confrontés à un chantier",
+            "C'est l'état ordinaire tant que la calibration n'a pas eu "
+            "lieu : la bibliothèque a été reconstruite, pas relevée. "
+            "Trois relevés concordants suffisent à en valider un."))
+
+    # Celui-là, en revanche, est anormal : quelqu'un a corrigé un
+    # rendement APRÈS l'avoir confirmé sur des chantiers. Soit la
+    # correction est juste et il faut revalider, soit elle est fausse.
+    part_a_revalider = montant_a_revalider / total if total else 0.0
+    if part_a_revalider >= SEUILS["part_a_revalider"]:
+        alertes.append(_alerte(
+            ATTENTION, "rendements_a_revalider",
+            f"{part_a_revalider * 100:.0f} % du montant repose sur des "
+            f"rendements validés puis modifiés",
+            "Ces rendements avaient été confrontés à des chantiers, et "
+            "leur valeur a changé depuis. La validation ne vaut plus : "
+            "soit la correction est juste et il faut la reconfronter, "
+            "soit elle est de trop."))
 
     tries = sorted(postes, key=lambda p: -p["montant"])
     concentration = sum(p["part"] for p in tries[:3])
@@ -253,6 +282,7 @@ def analyser(chiffres, bordereau=None, params=None, rabais=0.0,
             "rabais_applique": rabais,
             "rabais_maximal": rabais_maximal(chiffres, b, params),
             "part_non_validee": round(part_non_validee, 4),
+            "part_a_revalider": round(part_a_revalider, 4),
             "concentration_top3": round(concentration, 4),
             "nb_postes": len(postes),
         },

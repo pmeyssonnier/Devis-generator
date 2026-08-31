@@ -658,26 +658,67 @@ celles du module. **Les corrections ne valent que pour l'aperçu** tant
 qu'elles ne sont pas enregistrées : les devis et les offres continuent
 d'utiliser la bibliothèque du dépôt. Un test le vérifie.
 
-**Lever le doute sur un rendement** se fait au même endroit. Le ⚠️ de
-la colonne « À valider » ne dit pas *« ce prix est faux »* : il dit
-*« ce rendement n'a jamais été confronté à un chantier réel »*. Ce sont
-les treize ouvrages inventés pour couvrir des postes qui restaient sans
-prix — sans eux l'offre aurait été irrégulière (AR 18/04/2017, art.
-76).
+**Valider un rendement** se fait au même endroit — et valider n'est pas
+*déclarer*, c'est **constater**. Un rendement est validé quand des heures
+réelles, divisées par des quantités réelles, retombent près de la valeur
+en place. Deux conditions, décidées avec le chef d'entreprise :
 
-Une fois les heures relevées sur un chantier de cet ouvrage, le bouton
-**« ✅ Rendement confirmé par un chantier réalisé »** retire le code de
-la liste. Le sens inverse existe aussi, et compte autant : **« ⚠️
-Remettre ce rendement en doute »** marque n'importe lequel des 49
-ouvrages. Car l'absence de ⚠️ ne veut pas dire *validé* — seulement
-*non signalé* : les autres rendements viennent d'une documentation
-reconstruite, et seuls ceux qui pèsent dans les six devis historiques
-ont été confrontés à quelque chose de réel.
+| | |
+|---|---|
+| Relevés de chantier | **3 au minimum** |
+| Écart avec la bibliothèque | **15 % au plus** |
+| Qui décide | **lui**, d'une confirmation |
 
-Une validation ne change aucun prix, donc elle n'apparaît dans aucune
-comparaison de valeurs : elle est traitée à part, sans quoi lever un
-doute ne ferait apparaître aucun bouton d'enregistrement et le travail
-serait perdu au rafraîchissement suivant.
+L'outil dit si c'est possible et ce qui manque — *« il manque 2 relevés
+de plus »*, *« un écart de 34 %, au-delà des 15 % admis : c'est le
+rendement qu'il faut corriger avant de le valider »*. Il ne valide
+jamais tout seul : lui seul sait si les trois chantiers se ressemblaient.
+
+Les seuils sont des **constantes**, pas un réglage de l'interface : un
+seuil qu'on desserre d'un clic finit desserré le jour où les
+avertissements dérangent.
+
+#### Ce que contient une validation
+
+```json
+{
+  "code_ouv": "20.10",
+  "date": "2026-09-15",
+  "rendement": 0.583,
+  "n": 3, "quantite": 64.0, "heures": 37.0,
+  "note": "façades planes ; pas encore vérifié sur pignon"
+}
+```
+
+Le champ qui change tout est **`rendement`** : la valeur au moment de la
+validation. Parce qu'**une validation ne porte pas sur un ouvrage, elle
+porte sur une valeur**. Que quelqu'un corrige ensuite 0,583 en 0,72, et
+la validation ne vaut plus rien — avant, *rien ne le remarquait*.
+
+#### Trois états, pas deux
+
+| État | Condition | Ce que ça dit |
+|---|---|---|
+| **Validé** | validation existante, valeur inchangée | confronté au réel, et toujours d'actualité |
+| **Pas encore validé** | aucune validation, ou doute posé à la main | l'état **ordinaire** d'un outil jeune — 49 ouvrages sur 49 aujourd'hui |
+| **À revalider** | validé, puis la valeur a bougé | **celui-là est anormal** |
+
+C'est ce qui permet de dire la vérité sans crier au feu. Le contrôle des
+prix distingue les deux : *« jamais confronté »* sort en **info** — une
+alerte qui se déclenche sur chaque offre ne dit plus rien — tandis que
+*« validé puis modifié »* sort en **attention**, parce que c'est un vrai
+problème : soit la correction est juste et il faut la reconfronter, soit
+elle est de trop.
+
+Un ouvrage sans validation n'est pas pour autant suspect, et pouvoir
+**poser le doute à la main** sur celui qui déraille reste la moitié
+utile du mécanisme. Un doute posé à la main l'emporte sur une validation
+ancienne : celui qui se méfie en sait plus que le fichier.
+
+Le statut vient du moteur — `statut_rendement()` — et de lui seul :
+l'interface, le contrôle des prix et l'export Excel y lisent la même
+chose. Deux définitions de « validé » finiraient par diverger, et un
+poste passerait pour sûr d'un côté et douteux de l'autre.
 
 **Créer un ouvrage absent** se fait au même endroit. Un ouvrage ne se
 résume pas à un prix : il lui faut un code, une **unité** — sans elle
@@ -971,10 +1012,6 @@ ouvrages `OUVRAGES_A_VALIDER` — dont les rendements restent à confirmer.
       du déboursé sec et sont ici des ordres de grandeur, pas du vécu.
       L'atelier sait maintenant recevoir un relevé brut et le garder :
       il ne manque que des chantiers réels dans `data/releves.json`
-- [ ] **Décider du statut ⚠️** : avec le journal, « jamais confronté au réel »
-      devient calculable (zéro relevé). Le rendre automatique ferait passer
-      les avertissements de 13 à 49 — plus vrai, peut-être intenable
-      commercialement. Décision du chef d'entreprise, pas décision technique
 - [ ] Obtenir les **surfaces réelles** des 6 chantiers historiques et corriger
       `METRES_HISTO` ; viser un écart < 15 % sur chaque ligne
 - [ ] Trancher l'hypothèse sur les devis 15 et 16
@@ -982,9 +1019,10 @@ ouvrages `OUVRAGES_A_VALIDER` — dont les rendements restent à confirmer.
       les séparent sont maintenant à l'écran — voir « D'où vient l'écart ».
       Le devis 16 sort à K = 0,933 et demanderait −30 % de quantités :
       reste à confronter ça au souvenir du chantier
-- [ ] Valider les rendements des **13 ouvrages de `OUVRAGES_A_VALIDER`** —
-      ils comblent un trou qui rendait l'offre irrégulière, mais aucun n'a
-      jamais été confronté à un chantier réel
+- [ ] **Valider les rendements**, trois relevés à la fois. Aujourd'hui
+      **0 sur 49** est confronté au réel — c'est le vrai état de la
+      bibliothèque, et l'atelier sait maintenant l'établir chantier après
+      chantier plutôt que sur déclaration
 - [ ] Remplir `code_ref` avec les vraies références CCT (CCT 2022 Bruxelles /
       CCT-B Qualiroute / SB 250) au premier cahier des charges reçu
 - [ ] Envisager une bascule vers une base (Oracle/PL-SQL) si la bibliothèque
@@ -999,7 +1037,7 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-268 tests. Ceux de la chaîne Excel se skippent sans openpyxl, ceux de
+288 tests. Ceux de la chaîne Excel se skippent sans openpyxl, ceux de
 l'interface sans streamlit. L'écriture GitHub est testée avec un
 dépôt simulé — la suite ne touche jamais au réseau.
 

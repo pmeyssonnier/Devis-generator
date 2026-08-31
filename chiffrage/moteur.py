@@ -22,6 +22,7 @@ from .bibliotheque import (
     OUVRAGES_PAR_CODE,
     PARAMS,
     RELEVES,
+    VALIDATIONS,
     RESSOURCES_PAR_CODE,
 )
 
@@ -68,6 +69,7 @@ def tables_courantes(tables=None):
         # séance en ajoute — on enregistre le relevé au moment où on
         # s'en sert pour corriger.
         "releves": RELEVES,
+        "validations": VALIDATIONS,
         "ressources_par_code": RESSOURCES_PAR_CODE,
         "ouvrages_par_code": OUVRAGES_PAR_CODE,
     }
@@ -438,6 +440,193 @@ def rendement_constate(code_ouv, tables=None):
     }
 
 
+# ── Ce qu'il faut pour valider un rendement ───────────────────────────────
+# Trois relevés, quinze pour cent. Ce sont des DÉCISIONS, prises avec le
+# chef d'entreprise, et elles restent des constantes plutôt qu'un réglage
+# de l'interface : un seuil qu'on peut desserrer d'un clic finit desserré
+# le jour où les avertissements dérangent.
+RELEVES_POUR_VALIDER = 3
+ECART_MAX_VALIDATION = 0.15
+
+
+def validation_de(code_ouv, tables=None):
+    """La validation la plus récente d'un ouvrage, ou None.
+
+    Le journal garde toutes les validations — un rendement validé en
+    mars puis revalidé en septembre a une histoire, et l'effacer serait
+    perdre la seule trace de ce qui a bougé.
+    """
+    t = tables_courantes(tables)
+    faites = [v for v in (t.get("validations") or [])
+               if v.get("code_ouv") == code_ouv
+               and isinstance(v.get("rendement"), (int, float))]
+    if not faites:
+        return None
+    return max(faites, key=lambda v: str(v.get("date") or ""))
+
+
+def rendement_en_place(code_ouv, tables=None):
+    """Le rendement total de l'ouvrage, toutes lignes MO confondues."""
+    t = tables_courantes(tables)
+    par_res = t["ressources_par_code"]
+    return round(sum(c["qte_res"] for c in t["composition"]
+                      if c["code_ouv"] == code_ouv
+                      and par_res[c["code_res"]]["type_res"] == "MO"), 4)
+
+
+def statut_rendement(code_ouv, tables=None):
+    """Où en est un rendement vis-à-vis du réel.
+
+    Trois états, et le troisième est celui qui manquait :
+
+      · « valide »       — confronté au réel, et la valeur n'a pas bougé
+      · « a_valider »    — jamais confronté, ou doute posé à la main.
+                           C'est l'état ORDINAIRE d'un outil jeune, pas
+                           une alerte.
+      · « a_revalider »  — validé, PUIS la valeur a changé. Celui-là est
+                           alarmant, et rien ne le remarquait avant :
+                           une validation portait sur un ouvrage, elle
+                           porte maintenant sur une VALEUR.
+    """
+    t = tables_courantes(tables)
+    actuel = rendement_en_place(code_ouv, tables)
+    validation = validation_de(code_ouv, tables)
+
+    # Un doute posé à la main l'emporte sur une validation ancienne :
+    # celui qui se méfie en sait plus que le fichier.
+    if code_ouv in set(t.get("ouvrages_a_valider") or []):
+        motif = "doute posé à la main"
+        statut = "a_valider"
+    elif validation is None:
+        motif = "jamais confronté à un chantier"
+        statut = "a_valider"
+    elif abs(actuel - validation["rendement"]) > 1e-6:
+        motif = (f"validé à {validation['rendement']:.3f} h, "
+                  f"le rendement est aujourd'hui à {actuel:.3f} h")
+        statut = "a_revalider"
+    else:
+        motif = (f"confronté à {validation.get('n', 0)} relevé(s) "
+                  f"le {validation.get('date', '?')}")
+        statut = "valide"
+
+    return {
+        "code_ouv": code_ouv,
+        "statut": statut,
+        "motif": motif,
+        "rendement_actuel": actuel,
+        "rendement_valide": (validation or {}).get("rendement"),
+        "date": (validation or {}).get("date"),
+        "n": (validation or {}).get("n"),
+    }
+
+
+def codes_par_statut(tables=None):
+    """Les ouvrages rangés par état de leur rendement.
+
+    Une seule vérité sur « validé », partagée par l'interface, le
+    contrôle des prix et l'export Excel : deux définitions finiraient
+    par diverger, et un poste passerait pour sûr d'un côté et douteux de
+    l'autre.
+    """
+    t = tables_courantes(tables)
+    par_statut = {"valide": set(), "a_valider": set(), "a_revalider": set()}
+    for code in t["ouvrages_par_code"]:
+        par_statut[statut_rendement(code, tables)["statut"]].add(code)
+    return par_statut
+
+
+def codes_non_valides(tables=None):
+    """Tout ce qui n'est pas « valide » — jamais confronté ou à revalider."""
+    par_statut = codes_par_statut(tables)
+    return par_statut["a_valider"] | par_statut["a_revalider"]
+
+
+def validation_possible(code_ouv, tables=None):
+    """Ce qui manque pour pouvoir valider — ou rien, si c'est possible.
+
+    Deux conditions, décidées avec le chef d'entreprise : au moins
+    RELEVES_POUR_VALIDER chantiers relevés, et un écart avec la
+    bibliothèque sous ECART_MAX_VALIDATION.
+
+    La fonction ne valide RIEN : elle dit si c'est possible. C'est lui
+    qui confirme — il est le seul à savoir si les trois chantiers se
+    ressemblaient.
+    """
+    constate = rendement_constate(code_ouv, tables)
+    n = constate["n"] if constate else 0
+    ecart = constate["ecart"] if constate else None
+
+    if n < RELEVES_POUR_VALIDER:
+        manque = (f"{RELEVES_POUR_VALIDER - n} relevé(s) de plus — "
+                   f"{n} sur {RELEVES_POUR_VALIDER}")
+    elif ecart is None:
+        manque = "aucun rendement en place à comparer"
+    elif abs(ecart) > ECART_MAX_VALIDATION:
+        manque = (f"un écart de {abs(ecart) * 100:.0f} %, au-delà des "
+                   f"{ECART_MAX_VALIDATION * 100:.0f} % admis — c'est le "
+                   f"rendement qu'il faut corriger avant de le valider")
+    else:
+        manque = None
+
+    return {
+        "code_ouv": code_ouv,
+        "possible": manque is None,
+        "manque": manque,
+        "n": n,
+        "requis": RELEVES_POUR_VALIDER,
+        "ecart": ecart,
+        "tolerance": ECART_MAX_VALIDATION,
+        "constate": constate,
+    }
+
+
+def valider_rendement(code_ouv, tables=None, note="", aujourdhui=None):
+    """Le bulletin de validation à ajouter au journal.
+
+    Ne l'ajoute pas : le rend. C'est l'appelant qui décide d'écrire, et
+    l'utilisateur qui a confirmé avant.
+    """
+    etat = validation_possible(code_ouv, tables)
+    if not etat["possible"]:
+        raise ValueError(
+            f"{code_ouv} ne peut pas être validé : il manque {etat['manque']}.")
+    from datetime import date as _date
+
+    c = etat["constate"]
+    return {
+        "code_ouv": code_ouv,
+        "date": aujourdhui or f"{_date.today():%Y-%m-%d}",
+        # LA valeur validée. Sans elle, une correction ultérieure
+        # passerait inaperçue et la validation mentirait.
+        "rendement": rendement_en_place(code_ouv, tables),
+        "n": c["n"],
+        "quantite": c["quantite"],
+        "heures": c["heures"],
+        "note": note.strip(),
+    }
+
+
+def _fusionner(cle, sources):
+    """Réunit des journaux sans perdre ni doubler. Voir fusionner_releves."""
+    fusion, vus = [], set()
+    for source in sources:
+        for item in source or []:
+            if cle(item) in vus:
+                continue
+            vus.add(cle(item))
+            fusion.append(item)
+    return sorted(fusion, key=lambda x: (str(x.get("date") or ""),
+                                          str(x.get("code_ouv") or "")))
+
+
+def fusionner_validations(*sources):
+    """Comme les relevés : un journal s'ajoute, il ne s'écrase pas."""
+    return _fusionner(
+        lambda v: (str(v.get("code_ouv")), str(v.get("date")),
+                    v.get("rendement")),
+        sources)
+
+
 def fusionner_releves(*sources):
     """Réunit plusieurs jeux de relevés sans en perdre ni en doubler.
 
@@ -449,17 +638,11 @@ def fusionner_releves(*sources):
     Deux relevés identiques sur les cinq champs sont la même observation
     saisie deux fois, pas deux chantiers : on n'en garde qu'un.
     """
-    cle = lambda r: (str(r.get("code_ouv")), str(r.get("date")),  # noqa: E731
-                      str(r.get("chantier")), r.get("quantite"), r.get("heures"))
-    fusion, vus = [], set()
-    for source in sources:
-        for rel in source or []:
-            if cle(rel) in vus:
-                continue
-            vus.add(cle(rel))
-            fusion.append(rel)
-    return sorted(fusion, key=lambda r: (str(r.get("date") or ""),
-                                          str(r.get("code_ouv") or "")))
+    return _fusionner(
+        lambda r: (str(r.get("code_ouv")), str(r.get("date")),
+                    str(r.get("chantier")), r.get("quantite"),
+                    r.get("heures")),
+        sources)
 
 
 # ═══════════════════════════════════════════════════════════════════════════

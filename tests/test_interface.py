@@ -783,32 +783,119 @@ def test_le_doute_se_pose_aussi_sur_un_ouvrage_qui_nen_portait_pas(AppTest):
     assert "corr_rend_valider" in boutons or "corr_rend_douter" in boutons
 
 
-def test_valider_puis_douter_fait_bien_laller_retour(AppTest):
-    """Le parcours réel : choisir le rendement d'un ouvrage marqué ⚠️,
-    déclarer qu'un chantier l'a confirmé, et pouvoir revenir dessus."""
+def _aller_sur(at, code):
+    """Ouvre l'atelier sur la ligne de main-d'œuvre de cet ouvrage."""
+    from chiffrage.moteur import tables_courantes  # noqa: PLC0415
+
+    [r for r in at.radio if "corriger" in (r.label or "").lower()][0].set_value(
+        "Un rendement (h/unité)").run()
+    tables = tables_courantes()
+    indice = next(i for i, c in enumerate(tables["composition"])
+                   if c["code_ouv"] == code
+                   and tables["ressources_par_code"][
+                       c["code_res"]]["type_res"] == "MO")
+    [s for s in at.selectbox if s.key == "corr_rend"][0].set_value(indice).run()
+    assert not at.exception, [e.value for e in at.exception]
+    return at
+
+
+def test_on_ne_valide_plus_dun_clic_sans_preuve(AppTest):
+    """Valider n'est plus une déclaration : sans trois relevés
+    concordants, le bouton n'existe pas — et l'écran dit ce qui manque
+    plutôt que de se taire."""
     from chiffrage.moteur import tables_courantes  # noqa: PLC0415
 
     at = _atelier(AppTest)
-    [r for r in at.radio if "corriger" in (r.label or "").lower()][0].set_value(
-        "Un rendement (h/unité)").run()
+    _aller_sur(at, tables_courantes()["ouvrages_a_valider"][0])
 
-    tables = tables_courantes()
-    doute = tables["ouvrages_a_valider"][0]
-    indice = next(i for i, c in enumerate(tables["composition"])
-                   if c["code_ouv"] == doute
-                   and tables["ressources_par_code"][
-                       c["code_res"]]["type_res"] == "MO")
-    liste = [s for s in at.selectbox if s.key == "corr_rend"][0]
-    liste.set_value(indice).run()
+    assert not [b for b in at.button if b.key == "corr_rend_valider"], (
+        "un rendement se validerait sans qu'aucun chantier ne l'ait confirmé")
+    assert any("il manque" in c.value and "relevé" in c.value
+                for c in at.caption)
+
+
+def test_trois_releves_concordants_ouvrent_la_validation(AppTest):
+    """Le parcours réel, jusqu'au bout : trois chantiers relevés, un
+    écart sous les 15 %, et c'est LUI qui confirme."""
+    import copy  # noqa: PLC0415
+
+    from chiffrage.moteur import (  # noqa: PLC0415
+        rendement_en_place,
+        tables_courantes,
+    )
+
+    code = tables_courantes()["ouvrages_a_valider"][0]
+    tables = copy.deepcopy(tables_courantes())
+    en_place = rendement_en_place(code, tables)
+    tables["releves"] = [
+        {"code_ouv": code, "date": f"2026-09-0{i}", "chantier": f"Chantier {i}",
+          "quantite": 10.0, "heures": 10.0 * en_place} for i in (1, 2, 3)]
+
+    at = _atelier(AppTest, tables)
+    _aller_sur(at, code)
+
+    boutons = [b for b in at.button if b.key == "corr_rend_valider"]
+    assert boutons, "trois relevés concordants n'ouvrent pas la validation"
+    assert "3 relevés" in boutons[0].label
+
+    boutons[0].click().run()
     assert not at.exception, [e.value for e in at.exception]
 
-    [b for b in at.button if b.key == "corr_rend_valider"][0].click().run()
-    assert doute not in at.session_state["tables_editees"]["ouvrages_a_valider"]
+    faites = at.session_state["tables_editees"]["validations"]
+    assert len(faites) == 1
+    bulletin = faites[0]
+    assert bulletin["code_ouv"] == code
+    assert bulletin["n"] == 3
+    # LE champ qui compte : la valeur validée. Sans elle, une correction
+    # ultérieure passerait inaperçue.
+    assert bulletin["rendement"] == pytest.approx(en_place)
+    assert bulletin["date"]
+    # Le doute posé à la main est levé du même geste.
+    assert code not in at.session_state["tables_editees"]["ouvrages_a_valider"]
 
-    # Et le retour en arrière, sans quoi une validation trop rapide
-    # serait irrattrapable depuis l'interface.
-    [b for b in at.button if b.key == "corr_rend_douter"][0].click().run()
-    assert doute in at.session_state["tables_editees"]["ouvrages_a_valider"]
+
+def test_corriger_un_rendement_valide_le_remet_en_cause(AppTest):
+    """Une validation porte sur une VALEUR. Qu'elle bouge, et la
+    validation ne vaut plus — c'est ce que rien ne remarquait avant."""
+    import copy  # noqa: PLC0415
+
+    from chiffrage.moteur import (  # noqa: PLC0415
+        rendement_en_place,
+        statut_rendement,
+        tables_courantes,
+    )
+
+    code = "20.10"
+    tables = copy.deepcopy(tables_courantes())
+    en_place = rendement_en_place(code, tables)
+    tables["validations"] = [{
+        "code_ouv": code, "date": "2026-09-15", "rendement": en_place,
+        "n": 3, "quantite": 30.0, "heures": 30.0 * en_place, "note": ""}]
+    assert statut_rendement(code, tables)["statut"] == "valide"
+
+    at = _atelier(AppTest, tables)
+    _aller_sur(at, code)
+    assert any("Rendement validé" in s.value for s in at.success)
+
+    # On corrige la valeur, comme le ferait une séance de calibration.
+    _champ(at, "corr_rend_valeur").set_value(en_place * 1.4).run()
+    [b for b in at.button if b.key == "corr_rend_ok"][0].click().run()
+    assert not at.exception, [e.value for e in at.exception]
+
+    assert any("À revalider" in e.value for e in at.error), (
+        "un rendement validé puis modifié passe pour toujours validé")
+
+
+def test_le_doute_se_pose_toujours_a_la_main(AppTest):
+    """Un ouvrage sans ⚠️ n'a pas pour autant été vérifié : pouvoir se
+    méfier reste la moitié utile du mécanisme."""
+    at = _atelier(AppTest)
+    _aller_sur(at, "20.10")
+
+    boutons = [b for b in at.button if b.key == "corr_rend_douter"]
+    assert boutons
+    boutons[0].click().run()
+    assert "20.10" in at.session_state["tables_editees"]["ouvrages_a_valider"]
 
 
 # ── Le champ suit ce qui est choisi ─────────────────────────────────────────

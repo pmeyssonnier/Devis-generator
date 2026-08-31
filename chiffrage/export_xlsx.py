@@ -43,14 +43,13 @@ from .bibliotheque import (
     COMPOSITION,
     LOTS,
     MAPPING,
-    OUVRAGES_A_VALIDER,
     OUVRAGES,
     OUVRAGES_PAR_CODE,
     PARAMS,
     RESSOURCES,
     RESSOURCES_PAR_CODE,
 )
-from .moteur import calcul_bordereau, coefficient_k
+from .moteur import calcul_bordereau, codes_non_valides, coefficient_k
 
 NOM_FICHIER_DEFAUT = "bibliotheque_prix_bagbatter.xlsx"
 
@@ -202,7 +201,7 @@ def exporter_bibliotheque(chemin=NOM_FICHIER_DEFAUT, params=None):
     ws = wb.create_sheet("MAPPING")
     _entetes(ws, ["poste_metre", "code_ouv", "libelle_ouv", "unite_ouv",
                   "statut"], [14, 12, 58, 12, 30])
-    a_valider = set(OUVRAGES_A_VALIDER)
+    a_valider = codes_non_valides()
     for ligne, (poste, code_ouv) in enumerate(sorted(MAPPING.items()), start=2):
         ouv = OUVRAGES_PAR_CODE.get(code_ouv, {})
         ws.cell(row=ligne, column=1, value=poste)
