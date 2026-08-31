@@ -328,7 +328,7 @@ exporter_devis(d, "devis_2026-042.xlsx",
 | Fichier | Rôle | Dépendance |
 |---|---|---|
 | `bibliotheque.py` | les données : RESSOURCES · OUVRAGES · COMPOSITION · MAPPING · PARAMS · METRES_HISTO | — |
-| `moteur.py` | calcul du bordereau, devis, fiche de prix, relevés de chantier, calibration, contrôle de cohérence | — |
+| `moteur.py` | calcul du bordereau, devis, fiche de prix, relevés de chantier, calibration et analyse d'écart, contrôle de cohérence | — |
 | `export_xlsx.py` | bibliothèque → Excel 6 onglets, **avec vraies formules** | openpyxl |
 | `devis_xlsx.py` | devis client prêt à envoyer : en-tête, postes par lot, TVA, conditions, signature | openpyxl |
 | `devis_json.py` | enregistrer un devis (saisie, pas prix) et le relire pour le modifier | — |
@@ -810,6 +810,41 @@ Le devis 16 demande 37 h de main-d'œuvre au chiffrage analytique. À 2 400 €
 HTVA matériaux compris, cela fait ~66 €/h : les frais généraux ne sont pas
 couverts.
 
+### D'où vient l'écart
+
+La calibration ne compare que des totaux : elle dit qu'un devis est à
++42,7 %, pas d'où ça vient. `analyser_ecart(num)` décompose un devis
+poste par poste et rend les trois chiffres qui séparent les deux
+hypothèses — **sans conclure**, parce que seul quelqu'un qui était sur le
+chantier peut trancher.
+
+| Devis | K implicite | Quantités à revoir | Concentration |
+|---|---:|---:|---:|
+| 13 — Cave + porte d'entrée | 1,329 | −0 % | 78 % |
+| 15 — Façade salle de bain | 1,095 | −18 % | 79 % |
+| 16 — Plafond + linteaux + isolation | **0,933** | **−30 %** | 66 % |
+
+**K implicite** — ce que le forfait vendu représente par rapport au
+déboursé sec, à comparer au K visé de 1,3324. Le devis 13 tombe à
+1,329 : sur ce chantier, la bibliothèque et le prix vendu se rejoignent,
+et c'est la preuve que le modèle sait viser juste. Le devis 16 sort à
+**0,933** : le forfait n'a pas couvert ses propres achats et heures,
+frais généraux et marge mis à part.
+
+**Quantités à revoir** — le facteur uniforme qu'il faudrait appliquer à
+toutes les quantités pour annuler l'écart. À −5 % c'est crédible ; à
+−30 %, il faudrait qu'un tiers du chantier n'ait pas existé, et
+l'hypothèse d'une vente sous le coût devient difficile à écarter.
+
+**Concentration** — la part des trois plus gros postes. Un écart porté
+par un seul poste se règle en vérifiant SA quantité ; réparti sur tous,
+c'est un biais systématique des rendements.
+
+L'écran de l'onglet **🎯 Calibration** montre ces trois chiffres et le
+détail des postes, trié du plus lourd au plus léger. Un test vérifie que
+le facteur de quantités tombe juste : appliqué à toutes les lignes, il
+ramène bien le calcul sur le forfait vendu.
+
 ---
 
 ## Test d'intégration
@@ -842,7 +877,10 @@ ouvrages `OUVRAGES_A_VALIDER` — dont les rendements restent à confirmer.
 - [ ] Obtenir les **surfaces réelles** des 6 chantiers historiques et corriger
       `METRES_HISTO` ; viser un écart < 15 % sur chaque ligne
 - [ ] Trancher l'hypothèse sur les devis 15 et 16
-      (sous-tarification ou surestimation des quantités)
+      (sous-tarification ou surestimation des quantités). Les chiffres qui
+      les séparent sont maintenant à l'écran — voir « D'où vient l'écart ».
+      Le devis 16 sort à K = 0,933 et demanderait −30 % de quantités :
+      reste à confronter ça au souvenir du chantier
 - [ ] Valider les rendements des **13 ouvrages de `OUVRAGES_A_VALIDER`** —
       ils comblent un trou qui rendait l'offre irrégulière, mais aucun n'a
       jamais été confronté à un chantier réel
@@ -860,7 +898,7 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-237 tests. Ceux de la chaîne Excel se skippent sans openpyxl, ceux de
+244 tests. Ceux de la chaîne Excel se skippent sans openpyxl, ceux de
 l'interface sans streamlit. L'écriture GitHub est testée avec un
 dépôt simulé — la suite ne touche jamais au réseau.
 

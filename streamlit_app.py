@@ -29,6 +29,7 @@ from chiffrage.bibliotheque import (
     ENTREPRISE,
     LOTS,
     MAPPING,
+    METRES_HISTO,
     OUVRAGES,
     OUVRAGES_A_VALIDER,
     PARAMS,
@@ -69,6 +70,7 @@ from chiffrage.metre_io import (
     remplir_metre,
 )
 from chiffrage.moteur import (
+    analyser_ecart,
     calcul_bordereau,
     calibration,
     coefficient_k,
@@ -2065,6 +2067,88 @@ with onglet_calib:
             "2. ces chantiers ont été vendus sous leur coût analytique.",
             icon="⚠️",
         )
+
+    # ── D'où vient l'écart ─────────────────────
+    # La calibration ne compare que des totaux : elle dit qu'un devis est
+    # à +42,7 %, pas d'où ça vient. Deux causes opposées donnent le même
+    # total, et l'outil ne peut pas trancher — mais il peut montrer les
+    # trois chiffres qui les séparent, et laisser décider quelqu'un qui
+    # était sur le chantier.
+    st.subheader("D'où vient l'écart")
+    st.caption(
+        "Deux causes opposées produisent le même total. Ces chiffres les "
+        "séparent ; ils ne concluent pas."
+    )
+    choix_devis = st.selectbox(
+        "Devis", sorted(METRES_HISTO),
+        format_func=lambda n: f"{n} — {METRES_HISTO[n]['objet']}",
+        key="calib_devis")
+    a = analyser_ecart(choix_devis, params)
+
+    c1, c2, c3 = st.columns(3)
+    c1.metric(
+        "K implicite", f"{a['k_implicite']:.3f}",
+        f"visé {a['k_vise']:.3f}", delta_color="off",
+        help="Ce que le forfait vendu représente par rapport au déboursé "
+              "sec. En dessous de 1, le chantier n'a pas couvert ses "
+              "propres achats et heures.")
+    # Le signe se lit dans le sens du geste : un facteur de 0,70 veut dire
+    # qu'il faudrait 30 % de quantités EN MOINS, donc « −30 % ». Écrire
+    # « +30 % » ferait comprendre l'inverse — et un pourcentage retourné
+    # a déjà coûté à ce projet.
+    ajustement = (a["facteur_quantites"] - 1) * 100
+    c2.metric(
+        "Quantités à revoir", f"{ajustement:+.0f} %",
+        help="Le facteur uniforme qu'il faudrait appliquer à TOUTES les "
+              "quantités pour annuler l'écart. À −5 % c'est crédible ; à "
+              "−30 %, ça ne l'est plus.")
+    c3.metric(
+        "Concentration", f"{a['concentration'] * 100:.0f} %",
+        help="Part des trois plus gros postes. Un écart porté par un seul "
+              "poste se règle en vérifiant SA quantité ; réparti sur tous, "
+              "c'est un biais systématique.")
+
+    if not a["couvre_debourse"]:
+        st.error(
+            f"**Le forfait ne couvre pas le déboursé sec** : "
+            f"{_euro(a['forfait'])} vendus contre "
+            f"{_euro(a['debourse_sec'])} d'achats et d'heures, hors frais "
+            f"généraux et sans marge. Soit les quantités retenues ici sont "
+            f"trop élevées, soit ce chantier a été vendu à perte — c'est "
+            f"la question à poser à quelqu'un qui y était.",
+            icon="🛑")
+    elif a["k_implicite"] < a["k_vise"] * 0.95:
+        st.warning(
+            f"Le forfait couvre le déboursé, mais à K = "
+            f"{a['k_implicite']:.3f} au lieu de {a['k_vise']:.3f} : les "
+            f"frais généraux et la marge ne sont pas entièrement couverts.",
+            icon="⚠️")
+    else:
+        # Une tolérance, sinon 1,329 contre 1,3324 — trois millièmes —
+        # sortirait en alerte et l'alerte finirait par ne plus rien dire.
+        st.success(
+            f"K implicite {a['k_implicite']:.3f}, au niveau visé : sur ce "
+            f"chantier, la bibliothèque et le prix vendu se rejoignent.",
+            icon="✅")
+
+    st.dataframe(
+        [{"Code": x["code_ouv"], "Désignation": x["libelle_ouv"],
+           "Un.": x["unite_ouv"], "Qté": x["qte"],
+           "PU": x["pu_vente"], "Montant": x["montant"],
+           "Part": x["part"] * 100, "h MO": x["heures_mo"]}
+          for x in a["lignes"]],
+        hide_index=True, width="stretch",
+        column_config={
+            "PU": st.column_config.NumberColumn(format="%.2f €"),
+            "Montant": st.column_config.NumberColumn(format="%.0f €"),
+            "Part": st.column_config.NumberColumn(format="%.0f %%"),
+            "h MO": st.column_config.NumberColumn(format="%.1f"),
+        })
+    st.caption(
+        f"{a['heures_mo']:.0f} h de main-d'œuvre au chiffrage analytique, "
+        f"soit {a['prix_horaire_implicite']:.0f} €/h au forfait vendu — "
+        f"tout compris, matériaux et matériel."
+    )
 
     st.subheader("Les 13 rendements jamais validés")
     st.markdown(
