@@ -1902,6 +1902,87 @@ def test_un_journal_distant_illisible_arrete_l_ecriture():
         commiter_releves([], "d/r", "jeton", _lire=_lire, _ecrire=_ecrire)
 
 
+# ── 24. D'où vient l'écart d'un devis historique ───────────────────────────
+def test_lanalyse_redit_la_meme_chose_que_la_calibration():
+    """Deux vérités sur un même écart, c'est une lecture faussée tôt ou
+    tard. L'analyse détaille, elle ne recalcule pas autrement."""
+    cal = {r["devis"]: r for r in moteur.calibration()["lignes"]}
+    for num, ref in cal.items():
+        a = moteur.analyser_ecart(num)
+        assert a["calcule"] == pytest.approx(ref["calcule"], abs=0.01)
+        assert a["ecart"] == pytest.approx(ref["ecart"], abs=1e-4)
+        assert a["heures_mo"] == pytest.approx(ref["heures_mo"], abs=0.01)
+
+
+def test_le_facteur_de_quantites_annule_vraiment_lecart():
+    """Le chiffre le plus engageant de l'écran : « il faudrait 30 % de
+    quantités en moins ». Il doit tomber juste — appliqué à toutes les
+    lignes, il ramène le calcul sur le forfait vendu."""
+    for num in moteur.tables_courantes()["metres_histo"]:
+        a = moteur.analyser_ecart(num)
+        facteur = a["facteur_quantites"]
+        lignes = [(x["code_ouv"], x["qte"] * facteur) for x in a["lignes"]]
+        rejoue = moteur.devis(f"essai {num}", lignes)
+        assert rejoue["total_ht"] == pytest.approx(a["forfait"], rel=1e-3), (
+            f"devis {num} : le facteur ne ramène pas sur le forfait")
+
+
+def test_le_k_implicite_est_ce_que_le_forfait_a_couvert():
+    """K implicite = forfait / déboursé sec. En dessous de 1, le chantier
+    n'a pas payé ses propres achats et heures — et `couvre_debourse` doit
+    le dire, sans quoi l'écran rassurerait à tort."""
+    for num in moteur.tables_courantes()["metres_histo"]:
+        a = moteur.analyser_ecart(num)
+        assert a["k_implicite"] == pytest.approx(
+            a["forfait"] / a["debourse_sec"], abs=1e-3)
+        assert a["couvre_debourse"] == (a["k_implicite"] >= 1.0)
+        # Le calculé, lui, est toujours le déboursé fois K : c'est la
+        # définition même du prix de vente.
+        assert a["calcule"] == pytest.approx(
+            a["debourse_sec"] * a["k_vise"], rel=1e-3)
+
+
+def test_les_postes_sortent_du_plus_lourd_au_plus_leger():
+    """On regarde d'abord ce qui pèse : un écart porté par un seul poste
+    se règle en vérifiant SA quantité."""
+    a = moteur.analyser_ecart("16")
+    montants = [x["montant"] for x in a["lignes"]]
+    assert montants == sorted(montants, reverse=True)
+    assert sum(x["part"] for x in a["lignes"]) == pytest.approx(1.0, abs=1e-3)
+    assert a["concentration"] == pytest.approx(
+        sum(x["part"] for x in a["lignes"][:3]), abs=1e-3)
+
+
+def test_lanalyse_ne_tranche_pas_a_la_place_du_chef_dentreprise():
+    """Deux causes opposées produisent le même total. L'outil rend les
+    chiffres qui les séparent ; il ne rend aucun verdict — pas de champ
+    « hypothèse », pas de « cause »."""
+    a = moteur.analyser_ecart("16")
+    assert not {"hypothese", "cause", "verdict", "conclusion"} & set(a)
+
+
+def test_un_devis_historique_inconnu_est_refuse():
+    with pytest.raises(KeyError):
+        moteur.analyser_ecart("99")
+
+
+def test_lanalyse_suit_les_tables_corrigees():
+    """Pendant une séance, la référence est la copie de travail : sinon
+    l'écart s'afficherait contre des valeurs qu'on vient de remplacer."""
+    import copy  # noqa: PLC0415
+
+    tables = copy.deepcopy(moteur.tables_courantes())
+    for ligne in tables["composition"]:
+        if tables["ressources_par_code"][
+                ligne["code_res"]]["type_res"] == "MO":
+            ligne["qte_res"] *= 2
+
+    avant = moteur.analyser_ecart("16")
+    apres = moteur.analyser_ecart("16", tables=tables)
+    assert apres["calcule"] > avant["calcule"]
+    assert apres["facteur_quantites"] < avant["facteur_quantites"]
+
+
 # ── 20. Reprendre un devis enregistré ──────────────────────────────────────
 # Le fichier relu ici a pu être édité à la main ou produit par une version
 # antérieure de la bibliothèque. Ces tests vérifient surtout qu'une donnée

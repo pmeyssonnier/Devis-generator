@@ -511,6 +511,81 @@ def calibration(params=None, tables=None):
     return {"lignes": resultats, "ecart_moyen_absolu": round(moyenne, 4)}
 
 
+def analyser_ecart(num, params=None, tables=None):
+    """
+    Décompose l'écart d'UN devis historique, poste par poste.
+
+    La calibration ne compare que des totaux : elle dit qu'un devis est à
+    +42,7 %, pas d'où ça vient. Or deux causes opposées produisent le même
+    total, et l'outil ne peut pas trancher entre elles — le chef
+    d'entreprise, si, à condition de voir les bons chiffres :
+
+      1. les quantités de METRES_HISTO sont trop élevées — elles viennent
+         des descriptifs des devis PDF, pas de relevés ;
+      2. le chantier a été vendu sous son coût analytique.
+
+    Trois chiffres les séparent, et cette fonction les rend SANS conclure :
+
+      · `k_implicite` — ce que le forfait vendu représente par rapport au
+        déboursé sec. En dessous de 1, le chantier n'a pas couvert ses
+        propres achats et heures : l'hypothèse 2 devient difficile à
+        écarter. Autour de 1, il a été vendu sans marge ni frais
+        généraux. La cible est K (1,3324 aujourd'hui).
+
+      · `facteur_quantites` — le facteur UNIFORME qu'il faudrait appliquer
+        à toutes les quantités pour annuler l'écart. « Il faudrait des
+        quantités inférieures de 30 % » se discute avec quelqu'un qui
+        était sur le chantier : à −5 % c'est crédible, à −30 % ça ne
+        l'est plus, et c'est l'hypothèse 2 qui reste.
+
+      · `concentration` — la part des trois plus gros postes. Un écart
+        porté par un seul poste se règle en vérifiant SA quantité ; un
+        écart réparti sur tous est un biais systématique des rendements
+        ou du prix de vente.
+
+    Les postes sortent triés par montant décroissant : on regarde d'abord
+    ce qui pèse.
+    """
+    t = tables_courantes(tables)
+    info = t["metres_histo"].get(str(num))
+    if info is None:
+        raise KeyError(f"Devis historique inconnu : {num}")
+
+    b = calcul_bordereau(params, tables)
+    d = devis(f"Devis {num} — {info['objet']}", info["lignes"],
+               bordereau=b, tables=tables)
+    forfait = info["forfait"]
+    calcule = d["total_ht"]
+    debourse = round(sum(x["debourse_sec"] for x in d["lignes"]), 2)
+
+    lignes = sorted(d["lignes"], key=lambda x: x["montant"], reverse=True)
+    for ligne in lignes:
+        ligne["part"] = round(ligne["montant"] / calcule, 4) if calcule else 0.0
+
+    return {
+        "devis": str(num),
+        "objet": info["objet"],
+        "forfait": forfait,
+        "calcule": calcule,
+        "ecart": round((calcule - forfait) / forfait, 4) if forfait else 0.0,
+        "debourse_sec": debourse,
+        # Ce que le forfait vendu vaut en coefficient. À comparer au K visé.
+        "k_implicite": round(forfait / debourse, 4) if debourse else None,
+        "k_vise": coefficient_k(params),
+        "couvre_debourse": bool(debourse and forfait >= debourse),
+        # < 1 : il aurait fallu MOINS de quantités pour tomber sur le forfait.
+        "facteur_quantites": round(forfait / calcule, 4) if calcule else None,
+        "heures_mo": d["heures_mo"],
+        "prix_horaire_implicite": (round(forfait / d["heures_mo"], 2)
+                                    if d["heures_mo"] else None),
+        "concentration": round(
+            sum(x["montant"] for x in lignes[:3]) / calcule, 4)
+        if calcule else 0.0,
+        "lignes": lignes,
+        "inconnus": d["inconnus"],
+    }
+
+
 def imprimer_calibration(cal=None, params=None, tables=None):
     """Tableau de calibration lisible."""
     cal = cal or calibration(params, tables)
