@@ -181,6 +181,40 @@ def _lecture_et_ecriture_concordent(github):
     return lu.match(f"*/{dossier}") or str(lu).endswith(dossier)
 
 
+def _ecriture_sur_disque_demandee():
+    """Vrai si l'app doit enregistrer les tables SUR PLACE.
+
+    Réservé au poste de travail : `streamlit run` sur le PC de
+    l'entrepreneur, où le fichier lu est le fichier à écrire et où passer
+    par GitHub n'a aucun sens.
+
+    Le réglage est EXPLICITE, et il le reste. On pourrait croire qu'il
+    suffit de tester si le dossier est inscriptible : sur Streamlit Cloud
+    il l'est aussi, mais le conteneur est éphémère — la correction
+    partirait au premier redémarrage, sans un mot. Deviner ici, ce serait
+    perdre une séance de calibration en silence.
+    """
+    return os.environ.get("CHIFFRAGE_ECRITURE_LOCALE", "").strip().lower() in (
+        "1", "oui", "true", "vrai")
+
+
+def _enregistrer_sur_disque(a_ecrire, dossier):
+    """Écrit les tables corrigées là où l'app les a lues.
+
+    Pas de fusion, à la différence du journal commité : sur un poste, il
+    n'y a qu'un seul rédacteur, et la table en session contient déjà tout
+    ce qui a été lu au démarrage.
+    """
+    ecrits = []
+    for nom, contenu in a_ecrire.items():
+        chemin = Path(dossier) / f"{nom}.json"
+        chemin.write_text(
+            json.dumps(contenu, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8")
+        ecrits.append(chemin.name)
+    return ecrits
+
+
 def _releves(tables):
     """Le journal des chantiers, quelle que soit la version d'où viennent
     ces tables.
@@ -198,24 +232,65 @@ def _code_du_libelle(libelle):
     return libelle.split(" · ", 1)[0]
 
 
-def _libelle_court(code_ouv, bordereau):
+def _sur_petit_ecran(user_agent):
+    """Devine, d'après le navigateur, si l'écran est celui d'un téléphone.
+
+    Une devinette, et assumée comme telle : il n'existe pas de largeur
+    d'écran côté serveur en Streamlit. Elle ne sert qu'à décider d'une
+    TRONCATURE de libellé — jamais d'un prix, jamais d'un calcul. Et elle
+    penche du côté sûr : signature inconnue ou absente, on répond « petit
+    écran » et on tronque, c'est-à-dire le comportement d'avant.
+    """
+    ua = (user_agent or "").lower()
+    if not ua:
+        return True
+    grands = ("windows nt", "macintosh", "x11", "cros")
+    petits = ("mobi", "android", "iphone", "ipod", "ipad", "phone")
+    if any(mot in ua for mot in petits):
+        return True
+    return not any(mot in ua for mot in grands)
+
+
+def _petit_ecran():
+    """`_sur_petit_ecran` appliqué à la session en cours.
+
+    `st.context` n'existe pas hors session — sous test notamment — et
+    l'en-tête peut manquer. Dans les deux cas on retombe sur la
+    troncature, qui n'a jamais rien cassé.
+    """
+    try:
+        return _sur_petit_ecran(st.context.headers.get("User-Agent", ""))
+    except Exception:
+        return True
+
+
+def _libelle_court(code_ouv, bordereau, tronquer=True):
     """« 40.20 · Enduit de façade minéral armé, deux c… »
 
-    Le libellé complet, prix compris, dépasse la largeur d'un téléphone :
-    dans le menu déroulant du tableau des postes — qui est une grille, pas
-    un simple selectbox — les options débordaient hors de l'écran, tronquées
-    à GAUCHE, code invisible. Le prix disparaît donc d'ici ; il reste sous
-    les yeux dans le tableau récapitulatif juste en dessous, colonne « PU
-    HTVA ». Le code, lui, reste en tête : c'est la clé, et
+    Le libellé complet dépasse la largeur d'un téléphone : dans le menu
+    déroulant du tableau des postes — qui est une grille, pas un simple
+    selectbox — les options débordaient hors de l'écran, tronquées à
+    GAUCHE, code invisible. D'où la troncature.
+
+    Mais 45 des 49 libellés y passent, pour une longueur médiane de 46
+    caractères : sur un écran de PC, c'est une perte d'information
+    gratuite. `tronquer=False` rend donc le libellé entier — et le prix
+    avec, qui n'avait été retiré que pour gagner de la place. Le choix
+    se fait sur `_petit_ecran()`, qui tronque en cas de doute.
+
+    Le code reste en tête dans les deux cas : c'est la clé, et
     `_code_du_libelle()` la relit.
     """
     libelle = bordereau[code_ouv]["libelle_ouv"]
+    if not tronquer:
+        return (f"{code_ouv} · {libelle} — "
+                 f"{bordereau[code_ouv]['pu_vente']:.2f} €")
     if len(libelle) > 34:
         libelle = libelle[:33].rstrip() + "…"
     return f"{code_ouv} · {libelle}"
 
 
-def _lignes_lisibles(lignes, bordereau):
+def _lignes_lisibles(lignes, bordereau, tronquer=True):
     """Rend les postes d'un devis prêts pour le tableau, et la liste des
     ouvrages perdus en route.
 
@@ -244,7 +319,8 @@ def _lignes_lisibles(lignes, bordereau):
             # vient de créer.
             lisibles.append({"ouvrage": None, "qte": qte})
         elif code in bordereau:
-            lisibles.append({"ouvrage": _libelle_court(code, bordereau),
+            lisibles.append({"ouvrage": _libelle_court(code, bordereau,
+                                                        tronquer),
                               "qte": qte})
         else:
             perdus.append(code)
@@ -976,7 +1052,12 @@ with onglet_devis:
         )
 
     st.subheader("Postes")
-    lisibles, perdus = _lignes_lisibles(st.session_state.lignes_devis, b)
+    # Le même réglage pour les lignes et pour le menu : deux libellés
+    # différents pour un même ouvrage, et `_code_du_libelle()` ne
+    # retrouverait plus son code.
+    tronquer = _petit_ecran()
+    lisibles, perdus = _lignes_lisibles(
+        st.session_state.lignes_devis, b, tronquer)
     for code in perdus:
         st.warning(f"L'ouvrage « {code} » n'existe plus dans la "
                     "bibliothèque : poste retiré du devis.", icon="⚠️")
@@ -994,7 +1075,8 @@ with onglet_devis:
         width="stretch",
         column_config={
             "ouvrage": st.column_config.SelectboxColumn(
-                "Ouvrage", options=[_libelle_court(c, b) for c in sorted(b)],
+                "Ouvrage",
+                options=[_libelle_court(c, b, tronquer) for c in sorted(b)],
                 required=True, width="large"),
             "qte": st.column_config.NumberColumn(
                 "Quantité", min_value=0.0, step=0.5, format="%.2f"),
@@ -1766,6 +1848,40 @@ with onglet_biblio:
                                 "Enregistré. L'app se redéploie dans une à "
                                 "deux minutes ; ces valeurs deviendront "
                                 "celles de la bibliothèque.", icon="✅")
+            elif _ecriture_sur_disque_demandee():
+                if st.button(
+                    f"💾 Enregistrer {len(a_ecrire)} table(s) sur ce poste",
+                    type="primary", width="stretch", key="ecrire_disque",
+                ):
+                    try:
+                        ecrits = _enregistrer_sur_disque(
+                            a_ecrire, DOSSIER_DATA)
+                    except OSError as err:
+                        st.error(
+                            f"Écriture impossible dans `{DOSSIER_DATA}` : "
+                            f"{err}. Les tables restent téléchargeables "
+                            f"ci-dessous.", icon="🛑")
+                        for nom, contenu in a_ecrire.items():
+                            st.download_button(
+                                f"⬇️ {nom}.json",
+                                json.dumps(contenu, ensure_ascii=False,
+                                            indent=2) + "\n",
+                                file_name=f"{nom}.json",
+                                mime="application/json",
+                                width="stretch", key=f"dl_secours_{nom}")
+                    else:
+                        st.success(
+                            f"Écrit dans `{DOSSIER_DATA}` : "
+                            + ", ".join(f"`{n}`" for n in ecrits)
+                            + ". Ces valeurs deviendront celles de la "
+                            "bibliothèque **au prochain démarrage** — d'ici "
+                            "là, l'écran continue d'afficher la copie de "
+                            "travail, qui porte les mêmes chiffres.",
+                            icon="💾")
+                st.caption(
+                    f"Les tables s'écrivent dans `{DOSSIER_DATA}`, à côté de "
+                    f"celles qui ont été lues. Rien ne part sur le réseau."
+                )
             else:
                 for nom, contenu in a_ecrire.items():
                     st.download_button(

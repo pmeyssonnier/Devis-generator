@@ -1133,6 +1133,138 @@ def test_le_controle_de_concordance_apparait_avant_denregistrer(AppTest,
         "sans que rien ne le dise")
 
 
+# ── Le poste de travail : écrire sur place, et lire en entier ───────────────
+#
+# La prémisse « l'utilisateur travaille au téléphone » ne valait que pour
+# DEUX écrans — la grille du devis et l'atelier. Répondre à un métré est
+# une tâche de bureau, et le code n'a jamais prétendu l'inverse : aucun
+# compromis mobile dans cet onglet.
+
+def test_lecriture_sur_disque_est_explicite(app, monkeypatch):
+    """Deviner serait perdre une séance : sur Streamlit Cloud le dossier
+    est inscriptible AUSSI, mais le conteneur est éphémère — la
+    correction partirait au premier redémarrage, sans un mot."""
+    import streamlit_app as sa  # noqa: PLC0415
+
+    monkeypatch.delenv("CHIFFRAGE_ECRITURE_LOCALE", raising=False)
+    assert sa._ecriture_sur_disque_demandee() is False
+    for valeur in ("1", "oui", "VRAI", "true"):
+        monkeypatch.setenv("CHIFFRAGE_ECRITURE_LOCALE", valeur)
+        assert sa._ecriture_sur_disque_demandee() is True
+    monkeypatch.setenv("CHIFFRAGE_ECRITURE_LOCALE", "0")
+    assert sa._ecriture_sur_disque_demandee() is False
+
+
+def test_les_tables_secrivent_la_ou_elles_ont_ete_lues(app, tmp_path):
+    """Sur un poste, le fichier lu est le fichier à écrire — passer par
+    GitHub n'aurait aucun sens."""
+    import json as _json  # noqa: PLC0415
+
+    import streamlit_app as sa  # noqa: PLC0415
+
+    ecrits = sa._enregistrer_sur_disque(
+        {"ressources": [{"code_res": "MO.01"}]}, tmp_path)
+
+    assert ecrits == ["ressources.json"]
+    relu = _json.loads((tmp_path / "ressources.json").read_text("utf-8"))
+    assert relu == [{"code_res": "MO.01"}]
+    # Lisible dans un diff : indenté, accents en clair, fin de ligne.
+    brut = (tmp_path / "ressources.json").read_text("utf-8")
+    assert brut.endswith("\n") and "\n  " in brut
+
+
+def test_le_bouton_denregistrement_local_apparait_sur_demande(AppTest,
+                                                               monkeypatch):
+    import copy  # noqa: PLC0415
+
+    from chiffrage.moteur import tables_courantes  # noqa: PLC0415
+
+    monkeypatch.setenv("CHIFFRAGE_ECRITURE_LOCALE", "1")
+    tables = copy.deepcopy(tables_courantes())
+    tables["ressources"][0]["pu_res"] += 3.0
+    tables["ressources_par_code"] = {r["code_res"]: r
+                                      for r in tables["ressources"]}
+    at = _atelier(AppTest, tables)
+
+    assert any(b.key == "ecrire_disque" for b in at.button), (
+        "aucun enregistrement local proposé alors qu'il est demandé")
+    assert not [d for d in at.get("download_button")
+                 if d.label.startswith("⬇️ ressources")], (
+        "le téléchargement de secours ne doit pas doubler le bouton")
+
+
+def test_sans_demande_le_telechargement_reste_le_repli(AppTest, monkeypatch):
+    """Aucune régression pour le déploiement en service : sans le
+    réglage, on retrouve exactement les téléchargements d'avant."""
+    import copy  # noqa: PLC0415
+
+    from chiffrage.moteur import tables_courantes  # noqa: PLC0415
+
+    monkeypatch.delenv("CHIFFRAGE_ECRITURE_LOCALE", raising=False)
+    tables = copy.deepcopy(tables_courantes())
+    tables["ressources"][0]["pu_res"] += 3.0
+    tables["ressources_par_code"] = {r["code_res"]: r
+                                      for r in tables["ressources"]}
+    at = _atelier(AppTest, tables)
+
+    assert not [b for b in at.button if b.key == "ecrire_disque"]
+    assert [d for d in at.get("download_button")
+             if d.label.startswith("⬇️ ressources")]
+
+
+# ── Le libellé, entier quand l'écran le permet ──────────────────────────────
+
+@pytest.mark.parametrize("ua, petit", [
+    ("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0)", True),
+    ("Mozilla/5.0 (Linux; Android 14; Pixel 8) Mobile", True),
+    ("Mozilla/5.0 (iPad; CPU OS 17_0 like Mac OS X)", True),
+    ("Mozilla/5.0 (Windows NT 10.0; Win64; x64)", False),
+    ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)", False),
+    ("Mozilla/5.0 (X11; Linux x86_64)", False),
+    ("", True),
+    (None, True),
+    ("quelque-chose-d-inconnu/1.0", True),
+])
+def test_la_devinette_decran_penche_du_cote_sur(app, ua, petit):
+    """Il n'existe pas de largeur d'écran côté serveur : c'est une
+    devinette. Inconnue, elle répond « petit » — c'est-à-dire le
+    comportement d'avant, qui n'a jamais rien cassé."""
+    import streamlit_app as sa  # noqa: PLC0415
+
+    assert sa._sur_petit_ecran(ua) is petit
+
+
+def test_le_libelle_entier_porte_la_designation_et_le_prix(app):
+    """45 libellés sur 49 étaient amputés, pour une médiane de 46
+    caractères : sur un PC, c'est une perte d'information gratuite."""
+    import streamlit_app as sa  # noqa: PLC0415
+
+    from chiffrage.moteur import calcul_bordereau  # noqa: PLC0415
+
+    b = calcul_bordereau()
+    entier = sa._libelle_court("40.20", b, tronquer=False)
+    assert b["40.20"]["libelle_ouv"] in entier, "la désignation est amputée"
+    assert "€" in entier, "le prix n'a plus de raison de disparaître"
+    assert "…" not in entier
+
+    court = sa._libelle_court("40.20", b, tronquer=True)
+    assert len(court) < len(entier)
+
+
+def test_le_code_se_relit_quel_que_soit_le_libelle(app):
+    """L'invariant qui compte : c'est le code qui est la clé, et
+    `_code_du_libelle()` doit le retrouver dans les deux formes."""
+    import streamlit_app as sa  # noqa: PLC0415
+
+    from chiffrage.moteur import calcul_bordereau  # noqa: PLC0415
+
+    b = calcul_bordereau()
+    for tronquer in (True, False):
+        for code in b:
+            libelle = sa._libelle_court(code, b, tronquer)
+            assert sa._code_du_libelle(libelle) == code, (tronquer, code)
+
+
 # ── Retrouver un code dans la bibliothèque ──────────────────────────────────
 
 def _table(app, colonne):

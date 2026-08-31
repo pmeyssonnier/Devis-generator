@@ -142,12 +142,20 @@ retient cinquante codes, et un ouvrage confondu ne se verrait qu'au
 chantier. Ce qui est **stocké** reste le code : lui seul survit à un
 changement de libellé ou de prix.
 
-Le libellé y est **tronqué**, contrairement aux autres listes de l'app,
-et sans le prix : le menu d'une grille ne s'ajuste pas à la largeur de
-l'écran, et la version complète (80 caractères) débordait à droite en
-rognant le code à gauche sur un téléphone. Le prix reste sous les yeux
-juste en dessous, colonne « PU HTVA » du récapitulatif, et la liste
-complète est dans l'onglet **📚 Bibliothèque**.
+Le libellé y est **tronqué sur un petit écran**, et sans le prix : le
+menu d'une grille ne s'ajuste pas à la largeur de l'écran, et la version
+complète débordait à droite en rognant le code à gauche sur un
+téléphone. Sur un écran de PC, le libellé est rendu **entier**, prix
+compris — 45 des 49 libellés y passaient pour une longueur médiane de
+46 caractères, c'était une perte d'information gratuite.
+
+Le choix se fait sur la signature du navigateur, faute de largeur
+d'écran côté serveur. **C'est une devinette, et elle penche du côté
+sûr** : signature inconnue ou absente, on tronque — le comportement
+d'avant, qui n'a jamais rien cassé. Elle ne décide que d'une troncature
+de texte, jamais d'un prix ni d'un calcul. Le code reste en tête dans
+les deux formes : c'est lui la clé, et un test vérifie l'aller-retour
+sur les 49 ouvrages, dans les deux modes.
 
 Ce qui se reprend, c'est un fichier **`.json`** enregistré à côté :
 bouton *« Enregistrer pour modifier plus tard »* sous le devis, et
@@ -579,6 +587,14 @@ cellule, valider la saisie, en sortir : chaque geste rate une fois sur
 deux sur un téléphone, et une correction qui ne « prend » pas ne se
 voit pas.
 
+> **Le téléphone ne concerne que deux écrans**, et cet atelier est le
+> premier — corriger un rendement arrive sur chantier, pas au bureau.
+> Le second est la grille des postes du devis, plus haut. **Répondre à
+> un métré n'est pas une tâche de téléphone** et ne l'a jamais été : on
+> y dépose un classeur, on valide les colonnes détectées, on relit une
+> cinquantaine d'appariements. Cet onglet-là ne porte aucun compromis
+> mobile, et il n'a pas à en porter.
+
 **Le rendement se calcule depuis le chantier.** Sur un chantier,
 personne ne connaît un rendement : on connaît une quantité faite et des
 heures passées. *« On a fait 12 m², à deux, de 8 h à 11 h 30 »* — soit
@@ -686,6 +702,36 @@ message qui nomme la faute.
 des paramètres : une bibliothèque vide ne dégraderait pas le résultat,
 elle rendrait « aucun ouvrage » pour tous les postes — une offre
 entièrement vide, présentée comme normale. L'outil refuse de démarrer.
+
+### Sur le poste de travail
+
+Un devis se fait le plus souvent le soir, sur un PC. L'app tourne alors
+en local, **sans rien changer au code** :
+
+```bash
+pip install -r requirements.txt
+set CHIFFRAGE_ECRITURE_LOCALE=1        # Windows ; export … sous Linux
+streamlit run streamlit_app.py
+```
+
+Un `.bat` sur le bureau, un double-clic, le navigateur s'ouvre. Rien ne
+part sur le réseau, et les données restent sur la machine.
+
+`CHIFFRAGE_ECRITURE_LOCALE` change ce que fait l'atelier au moment
+d'enregistrer : au lieu de proposer des fichiers à télécharger — puis à
+remettre en place à la main, ce qui n'a aucun sens quand le fichier est
+juste là — il **écrit les tables corrigées là où il les a lues**.
+
+**Le réglage est explicite, et il le reste.** On pourrait croire qu'il
+suffit de tester si le dossier est inscriptible : sur Streamlit Cloud il
+l'est aussi, mais le conteneur est éphémère — la correction partirait au
+premier redémarrage, sans un mot. Deviner ici, ce serait perdre une
+séance de calibration en silence.
+
+Les valeurs écrites deviennent celles de la bibliothèque **au prochain
+démarrage** : les tables sont chargées une fois à l'import. D'ici là
+l'écran continue d'afficher la copie de travail, qui porte les mêmes
+chiffres.
 
 ### Une instance par entrepreneur
 
@@ -953,7 +999,7 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-253 tests. Ceux de la chaîne Excel se skippent sans openpyxl, ceux de
+268 tests. Ceux de la chaîne Excel se skippent sans openpyxl, ceux de
 l'interface sans streamlit. L'écriture GitHub est testée avec un
 dépôt simulé — la suite ne touche jamais au réseau.
 
