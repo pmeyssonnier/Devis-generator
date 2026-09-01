@@ -23,10 +23,15 @@ s'entraîne donc sur ce qui casse en vrai :
     · PLUSIEURS FEUILLES + UN RÉCAPITULATIF qui REPREND les mêmes codes.
       Le traiter comme un lot compterait chaque poste deux fois.
     · CODES D'UNE AUTRE FORME — `1.01`, et `3.04.a` pour les variantes.
-    · QUANTITÉS EN FORMULE — `=45*2,4`, ce qu'un métreur écrit
+    · QUANTITÉS EN FORMULE — `=32*7.5`, ce qu'un métreur écrit
       couramment. Les valeurs calculées sont injectées dans le fichier
       comme Excel le ferait ; UN poste en est privé volontairement (voir
       POSTE_SANS_CACHE), pour que la lecture ait aussi son cas d'échec.
+      Une formule STOCKÉE s'écrit toujours en syntaxe américaine : la
+      virgule y sépare des arguments, elle ne marque pas les décimales.
+      `=32*7,5` se lit donc « 32 fois 7 » suivi d'un « 5 » égaré, et le
+      classeur s'ouvre sur un message de récupération de contenu. Excel
+      affiche la virgule tout seul, selon la langue du poste.
     · ÉCRITURES D'UNITÉ — `m²`, `ML`, `PC`, à normaliser sans convertir.
     · UN ÉCART D'UNITÉ RÉEL — le solin (2.08) est imposé au m² là où la
       bibliothèque le tient au mètre. Aucun ouvrage ne lui est donc
@@ -94,7 +99,7 @@ LOTS = [
         ("1.01", "Installation du chantier, amenée et repli du matériel",
          "FF", 1),
         ("1.02", "Échafaudage de façade y compris location et démontage",
-         "m²", "=32*7,5"),
+         "m²", "=32*7.5"),
         ("1.03", "Bâchage et protection des ouvrages maintenus", "m²", 210),
         ("1.04", "Piquage des enduits de façade dégradés", "m²", 240),
         ("1.05", "Démolition de cloisons légères", "m²", 64),
@@ -112,7 +117,7 @@ LOTS = [
         ("2.03", "Réparation des bétons et passivation des armatures",
          "m²", 26),
         ("2.04", "Nettoyage de la façade sous haute pression", "m²",
-         "=32*7,5"),
+         "=32*7.5"),
         ("2.05", "Enduit de façade minéral sur treillis d'armature", "m²",
          205),
         ("2.06", "Mise en peinture de la façade, produit siloxane", "m²", 205),
@@ -143,7 +148,7 @@ LOTS = [
         ("4.08", "Peinture des plafonds intérieurs", "m²", 186),
         ("4.09", "Cornières et profilés de finition", "ML", 145),
     ]),
-    ("Lot 5 - Menuiseries, sanitaire", [
+    ("Lot 5 - Châssis et sanitaire", [
         ("5.01", "Châssis en PVC à double vitrage, pose comprise", "m²", 38),
         ("5.02", "Porte d'entrée en bois massif, quincaillerie comprise",
          "PC", 2),
@@ -234,11 +239,14 @@ def _cartouche(ws, titre_lot, hauteur):
 
 
 def _feuille_de_lot(wb, titre_lot, postes, hauteur_cartouche):
-    # Excel refuse un nom de feuille de plus de 31 caractères. Les
-    # titres sont écrits pour tenir : on VÉRIFIE plutôt que de tronquer
-    # en silence, sinon le récapitulatif renverrait vers un nom qui
-    # n'existe pas.
+    # Excel refuse un nom de feuille de plus de 31 caractères, et le
+    # récapitulatif REFERENCE ces noms : `='Lot 3'!F14`. On vérifie
+    # plutôt que de tronquer en silence, sinon la référence pointerait
+    # une feuille qui n'existe pas. Pas de virgule non plus — une
+    # référence à une feuille dont le nom en contient une reste valide,
+    # mais c'est un détail de citation dont ce fichier n'a pas besoin.
     assert len(titre_lot) <= 31, f"nom de feuille trop long : {titre_lot}"
+    assert "," not in titre_lot, f"virgule dans un nom de feuille : {titre_lot}"
     ws = wb.create_sheet(titre_lot)
     for lettre, _, largeur in COLONNES:
         ws.column_dimensions[lettre].width = largeur
@@ -323,7 +331,7 @@ def _feuille_recap(wb, totaux):
     ligne_ht = ligne
     ligne += 1
     _cell(ws, ligne, 2, "TVA 21 %", gras=True, fill=_FILL_TOTAL)
-    _cell(ws, ligne, 6, f"=F{ligne_ht}*0,21".replace(",", "."), gras=True,
+    _cell(ws, ligne, 6, f"=F{ligne_ht}*0.21", gras=True,
           fill=_FILL_TOTAL, fmt=FORMAT_EUR)
     ligne_tva = ligne
     ligne += 1
@@ -349,14 +357,22 @@ def _feuille_recap(wb, totaux):
 
 
 def _evaluer(formule):
-    """La valeur d'une formule arithmétique simple : `=32*7,5` -> 240.0.
+    """La valeur d'une formule arithmétique simple : `=32*7.5` -> 240.0.
 
     Volontairement bornée aux nombres et aux quatre opérations : ce
     module écrit un fichier d'entraînement, il n'implémente pas Excel.
+
+    La virgule est REFUSÉE, et pas par purisme : dans le XML d'un
+    classeur, une formule est toujours en syntaxe américaine, où la
+    virgule sépare des arguments. `=32*7,5` y devient « 32 fois 7 »
+    suivi d'un « 5 » égaré, et le fichier s'ouvre sur un message de
+    récupération de contenu.
     """
-    expression = formule.lstrip("=").replace(",", ".").replace(" ", "")
+    expression = formule.lstrip("=").replace(" ", "")
     if not re.fullmatch(r"[0-9.+\-*/()]+", expression):
-        raise ValueError(f"formule non évaluable : {formule}")
+        raise ValueError(
+            f"formule non évaluable : {formule} — une formule stockée "
+            f"s'écrit en syntaxe US, décimales au point")
     return float(eval(expression))      # noqa: S307 — expression validée
 
 
@@ -381,10 +397,18 @@ def _injecter_valeurs(chemin, valeurs_par_feuille):
             continue
         xml = contenus[cible].decode("utf-8")
         for ligne, valeur in valeurs.items():
+            # openpyxl écrit déjà un `<v/>` VIDE derrière la formule. Il
+            # faut le REMPLACER : deux `<v>` dans une même cellule sont
+            # invalides, et le classeur s'ouvre alors sur un message de
+            # récupération de contenu. Le défaut ne se voit qu'à
+            # l'ouverture dans un tableur — la lecture Python, elle,
+            # rendait la bonne quantité.
             motif = re.compile(
-                rf'(<c r="D{ligne}"[^>]*>)(<f>[^<]*</f>)(?!<v>)')
+                rf'(<c r="D{ligne}"[^>]*>)(<f>[^<]*</f>)'
+                rf'(?:<v\s*/>|<v>[^<]*</v>)?')
             xml, remplacees = motif.subn(
-                lambda m, v=valeur: f"{m.group(1)}{m.group(2)}<v>{v}</v>", xml)
+                lambda m, v=valeur: f"{m.group(1)}{m.group(2)}<v>{v}</v>",
+                xml, count=1)
             if not remplacees:
                 raise RuntimeError(
                     f"formule introuvable en D{ligne} de « {nom_feuille} »")

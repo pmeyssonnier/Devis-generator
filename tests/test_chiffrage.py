@@ -3159,3 +3159,93 @@ def test_les_formules_du_second_metre_sont_ancrees_sur_leur_ligne(metre_b):
                 vues += 1
     assert vues == sum(len(p) for _, p in __import__(
         "chiffrage.gen_metre_b", fromlist=["LOTS"]).LOTS)
+
+
+# ── Ce qui ne se voit qu'à l'ouverture dans un tableur ─────────────────────
+#
+# Ces deux défauts-là ont été livrés : le fichier se lisait parfaitement
+# en Python — bonnes quantités, bons postes, tous les tests au vert — et
+# Excel ouvrait la feuille 1 sur un message de récupération de contenu.
+# Une lecture réussie ne prouve donc RIEN sur la validité du classeur :
+# ce qui suit vérifie le XML lui-même.
+
+
+def _cellules_de(chemin):
+    """Chaque cellule des feuilles, avec ses enfants dans l'ordre."""
+    import xml.etree.ElementTree as ET
+    import zipfile
+
+    ns = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
+    with zipfile.ZipFile(chemin) as z:
+        for entree in z.namelist():
+            if not entree.startswith("xl/worksheets/sheet"):
+                continue
+            racine = ET.fromstring(z.read(entree))     # lève si mal formé
+            for cellule in racine.iter(f"{ns}c"):
+                formule = cellule.find(f"{ns}f")
+                yield {
+                    "feuille": entree,
+                    "ref": cellule.get("r") or "",
+                    "enfants": [e.tag.replace(ns, "") for e in cellule],
+                    "formule": (formule.text or "") if formule is not None
+                                else None,
+                }
+
+
+def test_aucune_cellule_ne_porte_deux_valeurs(metre_b):
+    """Le défaut n° 1 : injecter la valeur calculée AJOUTAIT un second
+    `<v>` derrière celui, vide, qu'openpyxl écrit déjà. Deux valeurs
+    dans une cellule sont invalides, et le classeur s'ouvrait sur une
+    récupération de contenu."""
+    for cellule in _cellules_de(str(metre_b)):
+        assert cellule["enfants"].count("v") <= 1, (
+            f"{cellule['ref']} porte {cellule['enfants']}")
+        if "f" in cellule["enfants"] and "v" in cellule["enfants"]:
+            assert cellule["enfants"].index("f") \
+                < cellule["enfants"].index("v"), "la valeur précède la formule"
+
+
+def test_les_quantites_en_formule_sont_en_syntaxe_americaine(metre_b):
+    """Le défaut n° 2 : `=32*7,5`. Dans le XML d'un classeur, une
+    formule est TOUJOURS en syntaxe US — la virgule y sépare des
+    arguments, elle ne marque pas les décimales. Excel affiche la
+    virgule tout seul, selon la langue du poste."""
+    import re as _re
+
+    vues = 0
+    for cellule in _cellules_de(str(metre_b)):
+        if cellule["formule"] is None or not cellule["ref"].startswith("D"):
+            continue
+        vues += 1
+        assert _re.fullmatch(r"[0-9.+\-*/() ]+", cellule["formule"]), (
+            f"{cellule['ref']} : « {cellule['formule']} » n'est pas une "
+            f"formule arithmétique en syntaxe US")
+    assert vues >= 3, "plus aucune quantité en formule à vérifier"
+
+
+def test_une_virgule_decimale_est_refusee_a_lecriture():
+    """La garde en amont : c'est à l'écriture qu'il faut refuser, pas à
+    la relecture — un classeur invalide déjà écrit est déjà livré."""
+    from chiffrage.gen_metre_b import _evaluer
+
+    assert _evaluer("=32*7.5") == pytest.approx(240.0)
+    with pytest.raises(ValueError):
+        _evaluer("=32*7,5")
+
+
+def test_les_noms_de_feuille_tiennent_dans_la_limite_dexcel(metre_b):
+    """Le récapitulatif RÉFÉRENCE ces noms. Tronqué, il pointerait une
+    feuille qui n'existe pas — et la référence casserait à l'ouverture,
+    pas à la lecture."""
+    from openpyxl import load_workbook
+
+    wb = load_workbook(str(metre_b))
+    for nom in wb.sheetnames:
+        assert len(nom) <= 31
+    recap = wb[wb.sheetnames[-1]]
+    references = [c.value for ligne in recap.iter_rows() for c in ligne
+                   if isinstance(c.value, str) and c.value.startswith("='")]
+    assert references, "le récapitulatif ne renvoie vers aucun lot"
+    for reference in references:
+        feuille = reference.split("'")[1]
+        assert feuille in wb.sheetnames, f"référence morte : {reference}"
