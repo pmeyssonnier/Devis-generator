@@ -312,6 +312,7 @@ python -m chiffrage devis 40.20:26 40.30:26 --sortie=devis.xlsx \
 
 python -m chiffrage export  bibliotheque.xlsx    # bibliothèque -> Excel, 6 onglets
 python -m chiffrage metre   metre.xlsx           # métré de marché public fictif
+python -m chiffrage metre2  metre_b.xlsx         # un second, d'un autre adjudicateur
 python -m chiffrage offre   metre.xlsx offre.xlsx
 ```
 
@@ -349,6 +350,7 @@ exporter_devis(d, "devis_2026-042.xlsx",
 | `controle_prix.py` | relit une offre avant dépôt : couverture, rabais maximal, alertes | — |
 | `justification_xlsx.py` | dossier de justification de prix (art. 36) | openpyxl |
 | `gen_metre.py` | métré de marché public fictif (49 postes, 10 lots) pour s'entraîner | openpyxl |
+| `gen_metre_b.py` | un **second** métré, d'un autre pouvoir adjudicateur : autres colonnes, une feuille par lot | openpyxl |
 | `metre_io.py` | lecture d'un métré imposé + remplissage de l'offre | openpyxl |
 | `__main__.py` | ligne de commande | — |
 
@@ -366,6 +368,7 @@ une cellule Colab.
 │   ├── moteur.py             → bordereau · devis · fiche de prix ·
 │   │                            calibration · contrôle de cohérence (Python pur)
 │   ├── gen_metre.py          → métré de marché public fictif       (openpyxl)
+│   ├── gen_metre_b.py        → un second, d'un autre adjudicateur  (openpyxl)
 │   ├── metre_io.py           → lecture d'un métré imposé + offre   (openpyxl)
 │   ├── export_xlsx.py        → bibliothèque -> Excel 6 onglets     (openpyxl)
 │   ├── devis_xlsx.py         → devis client prêt à envoyer         (openpyxl)
@@ -421,6 +424,30 @@ d'entraînement — chez une autre commune, l'outil ne lisait rien, ou
 pire, écrivait le prix dans la mauvaise colonne. `detection_colonnes.py`
 lit les intitulés (« Qté », « Métré », « P.U. HTVA » désignent la même
 chose) et, à défaut, le contenu.
+
+**Deux métrés d'entraînement, et le second est le seul qui apprenne
+quelque chose.** Le premier est le document dont l'outil est né : ses
+colonnes sont celles qui étaient codées en dur et ses 49 codes figurent
+tous dans `MAPPING` — il passe par construction. Le second
+(`python -m chiffrage metre2`) est écrit par un autre pouvoir
+adjudicateur et met en difficulté ce qui casse en vrai :
+
+| Ce qu'il impose | Ce que ça exerce |
+|---|---|
+| unité en C, quantité en D, prix en E ; intitulés « U », « Qté », « P.U. (€) » ; pas de colonne « Nature » | la détection des colonnes, jamais leur position supposée |
+| un cartouche de hauteur différente d'une feuille à l'autre | l'en-tête se cherche, il ne se compte pas |
+| une feuille par lot **plus** un récapitulatif qui reprend les codes | le choix des feuilles — le lire compterait tout deux fois |
+| des quantités en formule (`=32*7,5`), dont une **sans valeur en cache** | la lecture des formules, et le poste illisible qui doit rester visible |
+| `m²`, `ML`, `PC` | la normalisation des unités, sans jamais convertir |
+| un solin imposé au m² là où la bibliothèque le tient au mètre | le refus d'écrire un prix sur un écart d'unité |
+| deux quasi-correspondances (« faux plafonds », « descentes d'eau pluviale ») | le lexique |
+| un sciage de trémie absent de la bibliothèque | la création d'un ouvrage, ou le renoncement |
+| une ligne « pour mémoire » sans quantité | rien ne disparaît en silence |
+
+Environ trois quarts des postes trouvent une suggestion : assez pour que
+la séance consiste à **relire des propositions**, assez de trous pour
+qu'elle apprenne quelque chose. Un métré d'entraînement qui passe du
+premier coup n'entraîne personne.
 
 Une exception éclaire le reste : **pour la colonne des codes, le
 contenu l'emporte sur l'intitulé.** Un métré titre couramment « N° »
@@ -1110,7 +1137,7 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-309 tests. Ceux de la chaîne Excel se skippent sans openpyxl, ceux de
+320 tests. Ceux de la chaîne Excel se skippent sans openpyxl, ceux de
 l'interface sans streamlit. L'écriture GitHub est testée avec un
 dépôt simulé — la suite ne touche jamais au réseau.
 

@@ -2949,3 +2949,213 @@ def test_signaler_un_prix_ancien_ne_le_corrige_pas(monkeypatch):
     assert moteur.RESSOURCES_PAR_CODE[lourd]["pu_res"] == avant
     assert moteur.calcul_bordereau()["80.10"]["pu_vente"] == \
         pytest.approx(rapport["postes"][0]["montant"] / 12)
+
+
+# ── 28. Le second métré d'entraînement ─────────────────────────────────────
+#
+# Le premier métré est le document dont l'outil est né : ses colonnes
+# sont celles qui étaient codées en dur et ses 49 codes figurent tous
+# dans MAPPING. Il passe par construction, donc il n'apprend plus rien.
+# Celui-ci vient d'un AUTRE pouvoir adjudicateur, et ces tests vérifient
+# qu'il reste lisible SANS rien coder en dur — c'est-à-dire que ce qu'il
+# met en difficulté, c'est bien la détection, pas la chance.
+
+
+@pytest.fixture(scope="module")
+def metre_b(tmp_path_factory, openpyxl_dispo):
+    from chiffrage.gen_metre_b import generer_metre
+
+    chemin = tmp_path_factory.mktemp("chiffrage") / "metre_b.xlsx"
+    generer_metre(str(chemin))
+    return chemin
+
+
+def test_les_colonnes_du_second_metre_ne_sont_pas_celles_du_premier(metre_b):
+    """Sinon il ne prouverait rien : ce sont les colonnes du premier qui
+    étaient codées en dur, et c'est cette disposition-là qu'il faut
+    cesser de supposer."""
+    from openpyxl import load_workbook
+
+    from chiffrage.detection_colonnes import detecter
+    from chiffrage.metre_io import COLONNES_DEFAUT
+
+    wb = load_workbook(str(metre_b))
+    feuille = wb[wb.sheetnames[0]]
+    trouve = detecter(feuille)
+
+    assert not trouve["manquants"], "un métré ordinaire doit se lire seul"
+    assert trouve["champs"]["pu"] != COLONNES_DEFAUT["pu"]
+    assert trouve["champs"]["quantite"] != COLONNES_DEFAUT["quantite"]
+    # Et la détection vient des INTITULÉS, pas d'une déduction de
+    # position : « U », « Qté », « P.U. (€) » sont des abréviations, la
+    # forme sous laquelle un pouvoir adjudicateur écrit vraiment.
+    assert trouve["origines"]["pu"] == "entete"
+
+
+def test_len_tete_ne_tombe_pas_toujours_a_la_meme_ligne(metre_b):
+    """Le cartouche n'a pas la même taille d'une feuille à l'autre. Une
+    ligne d'en-tête fixe est exactement ce qui ne survit pas au métré
+    suivant."""
+    from openpyxl import load_workbook
+
+    from chiffrage.detection_colonnes import detecter
+
+    wb = load_workbook(str(metre_b))
+    lignes = {detecter(wb[nom])["ligne_entete"] for nom in wb.sheetnames[:-1]}
+    assert len(lignes) > 1, "toutes les feuilles ont le même en-tête"
+
+
+def test_le_recapitulatif_ne_compte_pas_les_postes_une_seconde_fois(metre_b):
+    from chiffrage.gen_metre_b import LOTS, NOM_RECAP
+    from chiffrage.metre_io import feuilles_avec_postes
+
+    feuilles = {f["nom"]: f for f in feuilles_avec_postes(str(metre_b))}
+    assert set(feuilles) == {titre for titre, _ in LOTS} | {NOM_RECAP}
+
+    recap = feuilles[NOM_RECAP]
+    assert recap["recapitulatif"] is True
+    assert recap["nb_postes"] == 0, (
+        "le récapitulatif rendrait chaque poste deux fois")
+    for titre, postes in LOTS:
+        assert feuilles[titre]["nb_postes"] == len(postes)
+
+
+def test_une_quantite_en_formule_est_lue_mais_signalee(metre_b):
+    """Ce que fait un métreur : `=32*7,5`. La valeur en cache est
+    utilisable — c'est ainsi qu'Excel enregistre — mais elle n'est pas
+    une saisie, et ça doit se voir."""
+    from chiffrage.metre_io import lire_metre_complet
+
+    lu = lire_metre_complet(str(metre_b))
+    par_code = {p["code"]: p for p in lu["postes"]}
+
+    assert par_code["1.02"]["quantite"] == pytest.approx(32 * 7.5)
+    dites = [a for a in lu["anomalies"]
+              if a["code"] == "1.02" and a["genre"] == "quantite_formule"]
+    assert dites, "une quantité calculée passe pour une quantité saisie"
+
+
+def test_une_formule_sans_cache_ne_disparait_pas(metre_b):
+    """Le garde-fou qui certifiait l'inverse de la vérité : un poste
+    illisible doit APPARAÎTRE, pas sortir du décompte."""
+    from chiffrage.gen_metre_b import POSTE_SANS_CACHE
+    from chiffrage.metre_io import lire_metre_complet
+
+    lu = lire_metre_complet(str(metre_b))
+
+    assert POSTE_SANS_CACHE not in {p["code"] for p in lu["postes"]}
+    manquant = [a for a in lu["anomalies"] if a["code"] == POSTE_SANS_CACHE]
+    assert manquant and manquant[0]["genre"] == "quantite_illisible"
+    assert manquant[0]["feuille"], "sans la feuille, la ligne est introuvable"
+
+
+def test_une_ligne_pour_memoire_sans_quantite_remonte_aussi(metre_b):
+    from chiffrage.metre_io import lire_metre_complet
+
+    lu = lire_metre_complet(str(metre_b))
+    memoire = [a for a in lu["anomalies"] if a["code"] == "5.08"]
+    assert memoire and memoire[0]["genre"] == "quantite_absente"
+
+
+def test_les_ecritures_dunite_se_normalisent_sans_convertir(metre_b):
+    """m², ML, PC — trois façons d'écrire, aucune conversion."""
+    from chiffrage.metre_io import lire_metre_complet, normaliser_unite
+
+    lu = lire_metre_complet(str(metre_b))
+    unites = {normaliser_unite(p["unite"]) for p in lu["postes"]}
+    assert {"m2", "m", "pce", "ff", "m3"} >= unites
+    par_code = {p["code"]: p for p in lu["postes"]}
+    assert normaliser_unite(par_code["1.09"]["unite"]) == "m"     # « ML »
+    assert normaliser_unite(par_code["1.07"]["unite"]) == "pce"   # « PC »
+
+
+def test_la_bibliotheque_couvre_la_plupart_des_postes_mais_pas_tous(metre_b):
+    """L'équilibre visé : assez de correspondances pour que la séance
+    consiste à RELIRE des propositions, et assez de trous pour qu'elle
+    apprenne quelque chose. Aucune n'est reprise de MAPPING : les codes
+    de ce pouvoir adjudicateur n'y figurent pas."""
+    from chiffrage.bibliotheque import MAPPING
+    from chiffrage.metre_io import lire_metre_complet
+    from chiffrage.suggestion import proposer_mapping
+
+    lu = lire_metre_complet(str(metre_b))
+    propose = proposer_mapping(lu["postes"], moteur.calcul_bordereau(), MAPPING)
+
+    origines = [p["origine"] for p in propose.values()]
+    assert "connu" not in origines
+    trouves = [c for c, p in propose.items() if p["code_ouv"]]
+    assert len(trouves) > len(propose) * 0.75
+    assert len(trouves) < len(propose), (
+        "un métré qui se mappe entièrement tout seul n'entraîne personne")
+
+
+def test_un_ecart_dunite_bloque_lecriture_du_prix(metre_b, tmp_path):
+    """Le solin est imposé au m², la bibliothèque le tient au mètre.
+    Chiffrer au m² un poste payé au mètre courant ne se voit qu'à la
+    facture : l'outil n'écrit pas, il remonte."""
+    from chiffrage.metre_io import lire_metre_complet, remplir_metre
+
+    lu = lire_metre_complet(str(metre_b))
+    solin = next(p for p in lu["postes"] if p["code"] == "2.08")
+    assert solin["unite"] != moteur.OUVRAGES_PAR_CODE["40.60"]["unite_ouv"]
+
+    rapport = remplir_metre(str(metre_b), str(tmp_path / "offre.xlsx"),
+                             mapping={"2.08": "40.60"})
+
+    ecarts = [e for e in rapport["ecarts_unite"] if e["code"] == "2.08"]
+    assert ecarts, "un prix au m² a été écrit sur un poste au mètre"
+    assert "2.08" in rapport["vides"]
+    assert "2.08" not in {c["code"] for c in rapport["chiffres"]}
+
+
+def test_le_second_metre_se_remplit_de_bout_en_bout(metre_b, tmp_path):
+    """Le parcours entier, sur un classeur multi-feuilles : chaque prix
+    doit atterrir dans SA feuille et sur SA ligne."""
+    from openpyxl import load_workbook
+
+    from chiffrage.bibliotheque import MAPPING
+    from chiffrage.metre_io import lire_metre_complet, remplir_metre
+    from chiffrage.suggestion import proposer_mapping
+
+    lu = lire_metre_complet(str(metre_b))
+    propose = proposer_mapping(lu["postes"], moteur.calcul_bordereau(), MAPPING)
+    mapping = {c: p["code_ouv"] for c, p in propose.items() if p["code_ouv"]}
+
+    sortie = tmp_path / "offre_b.xlsx"
+    rapport = remplir_metre(str(metre_b), str(sortie), mapping=mapping)
+
+    assert rapport["chiffres"], "aucun poste chiffré"
+    assert len(rapport["chiffres"]) == len(mapping)
+
+    # Le prix doit atterrir sur la ligne DE CE code, dans SA feuille : on
+    # le retrouve par le code, pas par une position supposée.
+    wb = load_workbook(str(sortie))
+    for chiffre in rapport["chiffres"]:
+        ws = wb[chiffre["feuille"]]
+        ligne = next(cellules[0].row for cellules in ws.iter_rows(
+            min_col=1, max_col=1) if cellules[0].value == chiffre["code"])
+        assert ws.cell(row=ligne, column=5).value == pytest.approx(
+            chiffre["pu"])
+    # Et le total du rapport est bien la somme des lignes qu'il annonce.
+    assert rapport["total_ht"] == pytest.approx(
+        sum(c["pu"] * c["quantite"] for c in rapport["chiffres"]), rel=1e-6)
+
+
+def test_les_formules_du_second_metre_sont_ancrees_sur_leur_ligne(metre_b):
+    """Le même garde-fou que pour le premier : `insert_rows` ne décale
+    pas les références, et une formule attachée à la mauvaise ligne
+    calcule faux sans jamais lever d'erreur."""
+    from openpyxl import load_workbook
+
+    wb = load_workbook(str(metre_b))
+    vues = 0
+    for nom in wb.sheetnames[:-1]:
+        ws = wb[nom]
+        for ligne in ws.iter_rows(min_col=6, max_col=6):
+            valeur = ligne[0].value
+            if isinstance(valeur, str) and valeur.startswith("=IF("):
+                assert f"$D{ligne[0].row}" in valeur
+                assert f"$E{ligne[0].row}" in valeur
+                vues += 1
+    assert vues == sum(len(p) for _, p in __import__(
+        "chiffrage.gen_metre_b", fromlist=["LOTS"]).LOTS)

@@ -8,6 +8,9 @@ Ligne de commande de l'outil de chiffrage.
     python -m chiffrage devis 40.20:26 70.10:120    devis à la volée
     python -m chiffrage export [fichier.xlsx]       bibliothèque -> Excel
     python -m chiffrage metre  [fichier.xlsx]       métré de marché public fictif
+    python -m chiffrage metre2 [fichier.xlsx]       un second, d'un autre pouvoir
+                                                   adjudicateur (autres colonnes,
+                                                   une feuille par lot)
     python -m chiffrage offre  metre.xlsx offre.xlsx  remplit un métré imposé
 
 `devis` accepte --tva=21 (défaut 6) et sait produire un vrai devis client :
@@ -144,7 +147,7 @@ def main(argv=None):
         return _cmd_devis(args)
 
     # ── Commandes nécessitant openpyxl ───────────────────────────────────
-    if cmd in ("export", "metre", "offre"):
+    if cmd in ("export", "metre", "metre2", "offre"):
         try:
             if cmd == "export":
                 from .export_xlsx import NOM_FICHIER_DEFAUT, exporter_bibliotheque
@@ -161,6 +164,15 @@ def main(argv=None):
                     args[0] if args else NOM_FICHIER_DEFAUT
                 )
                 print(f"Métré généré : {chemin} ({nb_postes} postes, {nb_lots} lots)")
+                return 0
+            if cmd == "metre2":
+                from .gen_metre_b import NOM_FICHIER_DEFAUT, generer_metre
+
+                chemin, nb_postes, nb_lots = generer_metre(
+                    args[0] if args else NOM_FICHIER_DEFAUT
+                )
+                print(f"Métré généré : {chemin} ({nb_postes} postes, "
+                       f"{nb_lots} feuilles de lot + récapitulatif)")
                 return 0
             if len(args) < 2:
                 print("Usage : python -m chiffrage offre metre.xlsx offre.xlsx")
