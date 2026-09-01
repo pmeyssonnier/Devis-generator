@@ -2694,3 +2694,258 @@ def test_le_prix_va_dans_la_colonne_detectee_de_la_bonne_feuille(
     ws = wb["Lot 01"]
     assert ws.cell(4, 7).value == 38
     assert all(ws.cell(ligne, 6).value in (None, "m2") for ligne in (4, 5, 6))
+
+
+# ── 27. L'âge des prix d'achat ─────────────────────────────────────────────
+#
+# Un rendement se valide sur des chantiers ; un prix d'achat, lui,
+# PÉRIME — en silence, parce que le fournisseur ne prévient pas. Ces
+# tests tiennent surtout à une distinction : un prix sans date n'est pas
+# un prix frais, c'est un prix d'origine inconnue.
+
+
+def _dater(monkeypatch, code_res, quand):
+    """Pose une date de prix sur une ressource, le temps d'un test."""
+    monkeypatch.setitem(moteur.RESSOURCES_PAR_CODE[code_res],
+                         "date_prix", quand)
+
+
+def _il_y_a(jours, depuis="2026-09-01"):
+    from datetime import date, timedelta
+    return f"{date.fromisoformat(depuis) - timedelta(days=jours):%Y-%m-%d}"
+
+
+def test_un_prix_sans_date_na_pas_dage_plutot_que_lage_zero():
+    """LA distinction. Rendre 0 ferait passer une bibliothèque
+    entièrement non datée — celle d'aujourd'hui — pour une bibliothèque
+    parfaitement à jour."""
+    assert moteur.age_prix({"pu_res": 12.0}) is None
+    assert moteur.age_prix({"pu_res": 12.0, "date_prix": ""}) is None
+    # Et une date illisible ne doit pas se lire « prix du jour » non plus.
+    assert moteur.age_prix({"date_prix": "hier"}) is None
+
+
+def test_lage_dun_prix_grandit_avec_lanciennete():
+    recent = moteur.age_prix({"date_prix": _il_y_a(10)},
+                              aujourdhui="2026-09-01")
+    vieux = moteur.age_prix({"date_prix": _il_y_a(400)},
+                             aujourdhui="2026-09-01")
+    assert recent == 10
+    assert vieux > recent
+    assert moteur.mois(vieux) > moteur.mois(recent)
+
+
+@pytest.mark.parametrize("jours,ancien", [(-1, False), (+1, True)])
+def test_le_seuil_dancien_separe_de_part_et_dautre(monkeypatch, jours, ancien):
+    """Pas de valeur en dur : ce qui compte est que le seuil sépare, et
+    qu'un prix daté ne soit JAMAIS compté avec ceux qu'on ignore."""
+    lignes = [{"code_ouv": "80.10", "qte": 10}]
+    lourd = moteur.materiaux_de(lignes)[0]["code_res"]
+    _dater(monkeypatch, lourd, _il_y_a(moteur.PRIX_ANCIEN_JOURS + jours))
+
+    vu = next(m for m in moteur.materiaux_de(lignes, aujourdhui="2026-09-01")
+               if m["code_res"] == lourd)
+    assert vu["ancien"] is ancien
+    assert vu["age"] is not None
+    assert vu["date_prix"]
+
+
+def test_seuls_les_materiaux_de_loffre_sont_regardes():
+    """Tout l'intérêt : la bibliothèque en compte trente-cinq, une offre
+    en consomme une poignée. Les signaler tous, c'est se faire ignorer."""
+    codes = ["80.10", "80.20"]
+    attendus = {c["code_res"] for c in moteur.COMPOSITION
+                 if c["code_ouv"] in codes
+                 and moteur.RESSOURCES_PAR_CODE[c["code_res"]]["type_res"]
+                 == "MAT"}
+    vus = {m["code_res"] for m in moteur.materiaux_de(
+        [{"code_ouv": c, "qte": 10} for c in codes])}
+
+    assert vus == attendus
+    assert vus < {r["code_res"] for r in moteur.RESSOURCES
+                   if r["type_res"] == "MAT"}
+
+
+def test_le_montant_dun_materiau_est_un_debourse_pas_un_prix_de_vente():
+    """Ce que le fournisseur facturera, pas ce que le client paiera :
+    c'est l'exposition réelle au tarif."""
+    b = moteur.calcul_bordereau()
+    lignes = [{"code_ouv": "80.10", "qte": 12}, {"code_ouv": "30.50", "qte": 7}]
+    total_mat = sum(b[x["code_ouv"]]["deb_mat"] * x["qte"] for x in lignes)
+
+    materiaux = moteur.materiaux_de(lignes)
+    assert sum(m["montant"] for m in materiaux) == pytest.approx(
+        total_mat, rel=1e-3)
+    assert sum(m["part"] for m in materiaux) == pytest.approx(1.0, abs=1e-3)
+    assert total_mat < sum(b[x["code_ouv"]]["pu_vente"] * x["qte"]
+                            for x in lignes)
+
+
+def test_doubler_les_quantites_double_les_achats():
+    simple = moteur.materiaux_de([{"code_ouv": "80.10", "qte": 10}])
+    double = moteur.materiaux_de([{"code_ouv": "80.10", "qte": 20}])
+    assert [m["code_res"] for m in simple] == [m["code_res"] for m in double]
+    for un, deux in zip(simple, double):
+        assert deux["montant"] == pytest.approx(un["montant"] * 2)
+        # Les PARTS, elles, ne bougent pas : la composition est la même.
+        assert deux["part"] == pytest.approx(un["part"])
+
+
+def test_les_materiaux_sortent_du_plus_lourd_au_plus_leger():
+    """L'ordre des coups de fil à passer au fournisseur."""
+    materiaux = moteur.materiaux_de([{"code_ouv": "80.10", "qte": 10},
+                                      {"code_ouv": "40.20", "qte": 30}])
+    montants = [m["montant"] for m in materiaux]
+    assert montants == sorted(montants, reverse=True)
+
+
+def test_une_date_illisible_est_refusee_au_chargement(tmp_path):
+    """Corruption, pas absence : une date illisible qu'on laisserait
+    passer se lirait « prix jamais daté » — l'inverse de ce qu'elle
+    voulait dire."""
+    import json as _json
+    import shutil
+    from pathlib import Path as _Path
+
+    source = _Path(biblio.__file__).parent / "data"
+    for fichier in source.glob("*.json"):
+        shutil.copy(fichier, tmp_path)
+    ressources = _json.loads(
+        (tmp_path / "ressources.json").read_text(encoding="utf-8"))
+    ressources[0]["date_prix"] = "12/03/2026"
+    (tmp_path / "ressources.json").write_text(
+        _json.dumps(ressources), encoding="utf-8")
+
+    with pytest.raises(biblio.BibliothequeInvalide) as err:
+        biblio.charger_tables(tmp_path)
+    assert "date" in str(err.value)
+
+
+def test_une_provenance_bien_formee_se_charge(tmp_path):
+    """Et l'absence de provenance aussi : le champ est FACULTATIF —
+    aucune ressource n'en porte aujourd'hui, et l'exiger refuserait de
+    démarrer sur une bibliothèque parfaitement utilisable."""
+    import json as _json
+    import shutil
+    from pathlib import Path as _Path
+
+    source = _Path(biblio.__file__).parent / "data"
+    for fichier in source.glob("*.json"):
+        shutil.copy(fichier, tmp_path)
+    brutes = _json.loads(
+        (tmp_path / "ressources.json").read_text(encoding="utf-8"))
+    assert not any("date_prix" in r for r in brutes), (
+        "aucun prix n'est daté à ce jour — c'est l'état de départ")
+    biblio.charger_tables(tmp_path)          # sans provenance : passe
+
+    brutes[0]["date_prix"] = "2026-03-12"
+    brutes[0]["source"] = "offre Fournisseur X du 12/03"
+    (tmp_path / "ressources.json").write_text(
+        _json.dumps(brutes), encoding="utf-8")
+    tables = biblio.charger_tables(tmp_path)
+    datee = tables["ressources_par_code"][brutes[0]["code_res"]]
+    assert moteur.age_prix(datee, aujourdhui="2026-09-12") > 0
+
+
+def test_une_source_vide_ne_dit_rien_et_est_refusee(tmp_path):
+    import json as _json
+    import shutil
+    from pathlib import Path as _Path
+
+    source = _Path(biblio.__file__).parent / "data"
+    for fichier in source.glob("*.json"):
+        shutil.copy(fichier, tmp_path)
+    brutes = _json.loads(
+        (tmp_path / "ressources.json").read_text(encoding="utf-8"))
+    brutes[0]["source"] = "   "
+    (tmp_path / "ressources.json").write_text(
+        _json.dumps(brutes), encoding="utf-8")
+
+    with pytest.raises(biblio.BibliothequeInvalide) as err:
+        biblio.charger_tables(tmp_path)
+    assert "source" in str(err.value)
+
+
+# ── Le contrôle avant dépôt ────────────────────────────────────────────────
+
+
+def _offre(codes_et_qtes):
+    b = moteur.calcul_bordereau()
+    return [{"code_ouv": c, "qte": q, "pu_vente": b[c]["pu_vente"]}
+             for c, q in codes_et_qtes]
+
+
+def test_des_prix_non_dates_sinforment_mais_nalertent_pas():
+    """Aujourd'hui AUCUN prix n'est daté : la part vaut 1. Une alerte
+    qui se déclenche sur chaque offre ne dit plus rien — celle-ci est
+    donc une INFO, comme « jamais confronté au réel »."""
+    rapport = controle_prix.analyser(_offre([("80.10", 12), ("80.20", 8)]))
+    ind = rapport["indicateurs"]
+
+    assert ind["part_prix_sans_date"] == pytest.approx(1.0)
+    assert ind["part_prix_ancien"] == pytest.approx(0.0)
+    dites = [a for a in rapport["alertes"] if a["code"] == "prix_sans_date"]
+    assert dites and dites[0]["niveau"] == controle_prix.INFO
+    assert not [a for a in rapport["alertes"] if a["code"] == "prix_anciens"]
+
+
+def test_un_prix_de_lan_dernier_sur_un_materiau_qui_pese_alerte(monkeypatch):
+    """Celui-là est un vrai risque : le prix a été juste, il ne l'est
+    peut-être plus, et un marché public ne se renégocie pas."""
+    lignes = _offre([("80.10", 12), ("80.20", 8)])
+    lourd = moteur.materiaux_de(lignes)[0]["code_res"]
+    _dater(monkeypatch, lourd, _il_y_a(moteur.PRIX_ANCIEN_JOURS + 200))
+
+    rapport = controle_prix.analyser(lignes, aujourdhui="2026-09-01")
+    ind = rapport["indicateurs"]
+
+    assert ind["part_prix_ancien"] >= controle_prix.SEUILS["part_prix_ancien"]
+    # Le matériau daté sort du lot des « sans date » : les deux mesures
+    # ne comptent jamais deux fois le même euro.
+    assert ind["part_prix_ancien"] + ind["part_prix_sans_date"] == \
+        pytest.approx(1.0)
+
+    criees = [a for a in rapport["alertes"] if a["code"] == "prix_anciens"]
+    assert criees and criees[0]["niveau"] == controle_prix.ATTENTION
+    assert lourd in criees[0]["detail"], "l'alerte doit nommer le matériau"
+
+
+def test_un_prix_ancien_sur_un_materiau_negligeable_ne_crie_pas(monkeypatch):
+    """Une offre presque entièrement en main-d'œuvre : dater ses
+    matériaux n'apprendrait rien, et le dire ferait du bruit pour rien."""
+    lignes = _offre([("20.10", 400), ("80.10", 1)])
+    lourd = moteur.materiaux_de(lignes)[0]["code_res"]
+    _dater(monkeypatch, lourd, _il_y_a(moteur.PRIX_ANCIEN_JOURS + 200))
+
+    rapport = controle_prix.analyser(lignes, aujourdhui="2026-09-01")
+    assert rapport["indicateurs"]["part_materiaux"] < \
+        controle_prix.SEUILS["poids_materiaux"]
+    assert rapport["indicateurs"]["part_prix_ancien"] > 0, (
+        "la mesure reste juste, c'est seulement l'alerte qui se tait")
+    assert not [a for a in rapport["alertes"]
+                 if a["code"] in ("prix_anciens", "prix_sans_date")]
+
+
+def test_une_offre_sans_aucun_materiau_ne_divise_par_rien(monkeypatch):
+    rapport = controle_prix.analyser(_offre([("20.10", 40)]))
+    assert rapport["materiaux"] == []
+    assert rapport["indicateurs"]["nb_materiaux"] == 0
+    assert rapport["indicateurs"]["part_prix_ancien"] == 0.0
+    assert rapport["indicateurs"]["achats_materiaux"] == 0.0
+
+
+def test_signaler_un_prix_ancien_ne_le_corrige_pas(monkeypatch):
+    """Le principe, et il vaut d'être tenu par un test : réindexer tout
+    seul des prix d'achat, ce serait fabriquer des chiffres que personne
+    n'a vus. L'outil signale ; c'est lui qui rappelle le fournisseur."""
+    lignes = _offre([("80.10", 12)])
+    lourd = moteur.materiaux_de(lignes)[0]["code_res"]
+    _dater(monkeypatch, lourd, _il_y_a(moteur.PRIX_ANCIEN_JOURS + 400))
+    avant = moteur.RESSOURCES_PAR_CODE[lourd]["pu_res"]
+
+    rapport = controle_prix.analyser(lignes, aujourdhui="2026-09-01")
+
+    assert [a for a in rapport["alertes"] if a["code"] == "prix_anciens"]
+    assert moteur.RESSOURCES_PAR_CODE[lourd]["pu_res"] == avant
+    assert moteur.calcul_bordereau()["80.10"]["pu_vente"] == \
+        pytest.approx(rapport["postes"][0]["montant"] / 12)

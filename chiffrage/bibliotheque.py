@@ -58,8 +58,14 @@ MODÈLE
                  rendement constaté en est le quotient — jamais stocké,
                  pour qu'il n'existe qu'une seule vérité.
 
-    RESSOURCES   (code_res, libelle_res, type_res, unite_res, pu_res)
+    RESSOURCES   (code_res, libelle_res, type_res, unite_res, pu_res,
+                  date_prix, source)
                  type_res : MO | MAT | EQP
+                 `date_prix` et `source` sont FACULTATIFS : d'où vient ce
+                 prix, et de quand il date. Un prix d'achat ne se valide
+                 pas comme un rendement — il périme. Absents, l'outil dit
+                 qu'il ne sait pas ; il ne dit jamais que le prix est
+                 frais.
          |
     COMPOSITION  (code_ouv, code_res, qte_res)
                  qte_res sur les lignes MO = RENDEMENT en h/unité.
@@ -77,6 +83,7 @@ Le lien se fait exclusivement par MAPPING (ou la colonne `code_ref`).
 
 import json
 import os
+from datetime import date
 from pathlib import Path
 
 from .parametres import ENTREPRISE, PARAMS  # noqa: F401  (façade historique)
@@ -133,6 +140,15 @@ def _charger_optionnel(nom, dossier, defaut):
     if not (Path(dossier) / f"{nom}.json").exists():
         return defaut
     return _charger(nom, dossier)
+
+
+def _est_une_date(valeur):
+    """Une date de calendrier écrite AAAA-MM-JJ, et rien d'autre."""
+    try:
+        date.fromisoformat(str(valeur))
+    except (TypeError, ValueError):
+        return False
+    return True
 
 
 def charger_tables(dossier=None):
@@ -198,6 +214,20 @@ def _controler(t):
         if not isinstance(res.get("pu_res"), (int, float)) or res["pu_res"] < 0:
             fautes.append(f"ressource {res.get('code_res')} : prix "
                            f"« {res.get('pu_res')} » invalide")
+        # La provenance d'un prix est FACULTATIVE : aucune ressource n'en
+        # porte aujourd'hui, et l'exiger refuserait de démarrer sur une
+        # bibliothèque parfaitement utilisable. Mais une date PRÉSENTE et
+        # illisible est une corruption, pas une absence — et une date
+        # illisible qu'on laisserait passer se lirait « prix jamais daté »,
+        # c'est-à-dire l'inverse de ce qu'elle voulait dire.
+        if "date_prix" in res and not _est_une_date(res["date_prix"]):
+            fautes.append(f"ressource {res.get('code_res')} : date de prix "
+                           f"« {res['date_prix']} » illisible "
+                           f"(attendu AAAA-MM-JJ)")
+        if "source" in res and not str(res["source"] or "").strip():
+            fautes.append(f"ressource {res.get('code_res')} : source vide — "
+                           f"une provenance vide ne dit rien, autant "
+                           f"l'omettre")
 
     if len(par_res) != len(ressources):
         fautes.append("codes de ressource en double")

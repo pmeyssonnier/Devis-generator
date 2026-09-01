@@ -74,6 +74,7 @@ from chiffrage.metre_io import (
     remplir_metre,
 )
 from chiffrage.moteur import (
+    age_prix,
     analyser_ecart,
     calcul_bordereau,
     calibration,
@@ -81,6 +82,7 @@ from chiffrage.moteur import (
     controle_coherence,
     devis,
     fiche_prix,
+    mois,
     releve_rendement,
     rendement_constate,
     releves_de,
@@ -862,6 +864,34 @@ def _repondre_a_un_metre(params):
             if not controle["alertes"]:
                 st.success("Aucun point d'attention.", icon="✅")
 
+            # ── Les matériaux de CETTE offre ───────────
+            # La bibliothèque en compte trente-cinq ; une offre en
+            # consomme une poignée. C'est la liste des coups de fil à
+            # passer au fournisseur avant de déposer — pas un inventaire.
+            if controle["materiaux"]:
+                with st.expander(
+                    f"🧾 Les {ind['nb_materiaux']} matériaux de cette offre "
+                    f"— {ind['achats_materiaux']:,.0f} € d'achats"
+                    .replace(",", " ")
+                ):
+                    st.dataframe([
+                        {"Code": m["code_res"],
+                         "Matériau": m["libelle_res"],
+                         "Achat": round(m["montant"], 2),
+                         "Part": f"{m['part'] * 100:.0f} %",
+                         "Prix daté du": m["date_prix"] or "—",
+                         "Âge": (f"{mois(m['age'])} mois" if m["age"] is not None
+                                  else "inconnu"),
+                         "Source": m["source"] or "—"}
+                        for m in controle["materiaux"]
+                    ], width="stretch", hide_index=True)
+                    st.caption(
+                        "L'âge d'un prix ne se devine pas : il vient de la "
+                        "date posée en corrigeant le prix dans l'atelier. "
+                        "Un prix sans date n'est pas un prix frais — c'est "
+                        "un prix dont on ignore l'origine."
+                    )
+
             # ── Dossier de justification ───────────────
             with st.expander("📄 Dossier de justification de prix"):
                 st.markdown(
@@ -1298,6 +1328,19 @@ with onglet_biblio:
         if actuelle.get("note"):
             st.caption(f"🛈 {actuelle['note']}")
 
+        # D'où vient ce prix, et de quand. Un rendement se valide sur des
+        # chantiers ; un prix d'achat, lui, périme — et il périme en
+        # silence, parce que le fournisseur ne prévient pas.
+        age = age_prix(actuelle)
+        if age is None:
+            st.caption("🕑 Prix **non daté** : on ignore de quand il vient.")
+        else:
+            st.caption(
+                f"🕑 Prix daté du **{actuelle['date_prix']}** — "
+                f"{mois(age)} mois"
+                + (f" · {actuelle['source']}" if actuelle.get("source")
+                    else ""))
+
         # Un widget à clé garde SA valeur d'une réexécution à l'autre, et
         # `value=` n'est lu qu'à la première : changer de ressource laissait
         # le prix de la PRÉCÉDENTE dans la case. Choisir MO.04 (45 €) après
@@ -1307,10 +1350,15 @@ with onglet_biblio:
         # repère porte aussi le prix enregistré : ainsi un retour aux
         # valeurs d'origine remet la case d'aplomb, alors qu'une saisie en
         # cours, elle, survit jusqu'à « Appliquer ».
-        repere = (choix, actuelle["pu_res"])
+        repere = (choix, actuelle["pu_res"], actuelle.get("date_prix"),
+                   actuelle.get("source"))
         if st.session_state.get("corr_res_repere") != repere:
             st.session_state.corr_res_repere = repere
             st.session_state.corr_res_valeur = float(actuelle["pu_res"])
+            st.session_state.corr_res_date = (
+                date.fromisoformat(actuelle["date_prix"])
+                if actuelle.get("date_prix") else date.today())
+            st.session_state.corr_res_source = actuelle.get("source") or ""
 
         col_val, col_btn = st.columns([2, 1])
         valeur = col_val.number_input(
@@ -1318,8 +1366,39 @@ with onglet_biblio:
             min_value=0.0, step=0.5,
             format="%.2f", key="corr_res_valeur")
         col_btn.write("")
+        # La date du PRIX, pas celle de la saisie : une offre reçue en
+        # mars reste un prix de mars, même encodée en août. Se tromper
+        # ici ferait passer un prix vieux de cinq mois pour un prix du
+        # jour — l'inverse de ce que cet écran doit rendre visible.
+        col_date, col_src = st.columns([1, 2])
+        col_date.date_input("Date de ce prix", key="corr_res_date",
+                             format="DD/MM/YYYY")
+        col_src.text_input(
+            "D'où vient-il ?", key="corr_res_source",
+            placeholder="offre Untel du 12/03, catalogue, prix de mémoire…")
+        st.caption(
+            "Date et provenance ne s'enregistrent que si le prix change "
+            "ou si la provenance est écrite : un prix daté d'aujourd'hui "
+            "sans que personne ne l'ait rouvert se lirait comme une "
+            "garantie."
+        )
         if col_btn.button("Appliquer", width="stretch", key="corr_res_ok"):
+            change = abs(float(valeur) - actuelle["pu_res"]) > 1e-9
+            source = st.session_state.corr_res_source.strip()
             actuelle["pu_res"] = float(valeur)
+            # On ne date que ce qui est AFFIRMÉ : un prix qui change, ou
+            # une provenance qu'on écrit. Un clic par réflexe — le même
+            # geste qui écrivait déjà un prix faux avant que le repère ne
+            # le corrige — daterait sinon d'aujourd'hui un prix que
+            # personne n'a rouvert. Une fausse fraîcheur serait pire que
+            # pas de date du tout : elle se lirait comme une garantie.
+            if change or source:
+                actuelle["date_prix"] = \
+                    f"{st.session_state.corr_res_date:%Y-%m-%d}"
+                if source:
+                    actuelle["source"] = source
+                else:
+                    actuelle.pop("source", None)
             tables["ressources_par_code"] = {r["code_res"]: r
                                               for r in tables["ressources"]}
             st.rerun()
@@ -1760,9 +1839,15 @@ with onglet_biblio:
             st.caption("Il manque une désignation ou une composition.")
 
     # ── Effet en direct ────────────────────────
+    # La provenance compte autant que le nombre : reconfirmer un prix
+    # d'achat sans le changer EST une modification — c'est même le geste
+    # le plus fréquent après un coup de fil au fournisseur. Ne comparer
+    # que `pu_res` ferait perdre la date au rafraîchissement suivant.
+    _provenance = lambda r: (r["pu_res"], r.get("date_prix"),  # noqa: E731
+                              r.get("source"))
     modifs_res = [r for r in tables["ressources"]
-                   if r["pu_res"] != origine["ressources_par_code"][
-                       r["code_res"]]["pu_res"]]
+                   if _provenance(r) != _provenance(
+                       origine["ressources_par_code"][r["code_res"]])]
     # Comparaison PAR CLÉ et non par position : un zip s'arrête à la
     # plus courte des deux listes, si bien que les lignes ajoutées en
     # créant un ouvrage passaient inaperçues — et le bouton

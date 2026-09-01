@@ -646,7 +646,122 @@ def fusionner_releves(*sources):
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# 6. Calibration sur les devis historiques
+# 6. L'âge des prix d'achat
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# Un rendement se valide sur des chantiers ; un prix d'achat, lui, ne se
+# valide pas — il PÉRIME. Il a été juste le jour où on l'a relevé, et il
+# vieillit tout seul, sans que rien à l'écran ne le dise. C'est le risque
+# symétrique de celui des rendements, et le seul qui échappe entièrement
+# à l'entreprise : elle ne décide pas du tarif de son fournisseur.
+#
+# D'où deux champs FACULTATIFS sur une ressource — `date_prix` et
+# `source` — et un principe : l'absence de date ne vaut pas fraîcheur.
+# Un prix non daté est d'origine inconnue, ce qui se compte à part et ne
+# se confond jamais avec un prix récent.
+#
+# Ce qui suit ne corrige AUCUN prix. Réindexer automatiquement des prix
+# d'achat sur un indice serait fabriquer des chiffres que personne n'a
+# vus : ici on signale, et c'est le chef d'entreprise qui redemande une
+# offre à son fournisseur.
+
+# Six mois. Le repère d'une offre fournisseur ordinaire en Belgique —
+# au-delà, elle ne s'engage plus. Constante, pas réglage d'interface :
+# même raison que pour les seuils de validation.
+PRIX_ANCIEN_JOURS = 180
+
+
+def age_prix(ressource, aujourdhui=None):
+    """L'âge en jours du prix d'une ressource — None si on ne sait pas.
+
+    None n'est PAS zéro, et c'est tout le sujet : un prix sans date
+    n'est pas un prix frais, c'est un prix d'origine inconnue. Les
+    confondre ferait passer une bibliothèque entièrement non datée —
+    celle d'aujourd'hui — pour une bibliothèque parfaitement à jour.
+
+    Une date illisible rend None elle aussi : le chargeur la refuse déjà
+    au démarrage, et une table éditée en session ne doit pas faire
+    tomber un chiffrage en cours.
+    """
+    from datetime import date as _date
+
+    brute = (ressource or {}).get("date_prix")
+    if not brute:
+        return None
+    try:
+        posee = _date.fromisoformat(str(brute))
+    except (TypeError, ValueError):
+        return None
+    jour = _date.fromisoformat(aujourdhui) if aujourdhui else _date.today()
+    return (jour - posee).days
+
+
+def materiaux_de(chiffres, tables=None, aujourdhui=None):
+    """Les matériaux RÉELLEMENT consommés par une offre, et l'âge de leur prix.
+
+    Restreint à l'offre, et c'est là tout l'intérêt : la bibliothèque
+    compte trente-cinq matériaux, une offre en consomme une poignée.
+    Signaler les trente-cinq, c'est se faire ignorer ; dire lesquels des
+    quatre qui pèsent dans CETTE offre-ci reposent sur un prix de l'an
+    dernier est une question qui a une réponse.
+
+    chiffres : [{code_ouv, qte, ...}] — la même entrée que
+               controle_prix.analyser().
+
+    Retourne la liste, du plus lourd au plus léger :
+        {code_res, libelle_res, unite_res, pu_res, date_prix, source,
+         age, ancien, quantite, montant, part}
+
+    `montant` est un DÉBOURSÉ — ce que le fournisseur facturera — et non
+    un prix de vente : c'est l'exposition réelle au tarif.
+    """
+    t = tables_courantes(tables)
+    par_res = t["ressources_par_code"]
+
+    compo_par_ouv = {}
+    for comp in t["composition"]:
+        compo_par_ouv.setdefault(comp["code_ouv"], []).append(comp)
+
+    quantites = {}
+    for ligne in chiffres:
+        for comp in compo_par_ouv.get(ligne["code_ouv"], []):
+            res = par_res.get(comp["code_res"])
+            if res is None or res["type_res"] != "MAT":
+                continue
+            quantites[res["code_res"]] = (
+                quantites.get(res["code_res"], 0.0)
+                + comp["qte_res"] * ligne["qte"])
+
+    achats = sum(q * par_res[c]["pu_res"] for c, q in quantites.items()) or 1e-9
+
+    materiaux = []
+    for code, quantite in quantites.items():
+        res = par_res[code]
+        montant = quantite * res["pu_res"]
+        age = age_prix(res, aujourdhui)
+        materiaux.append({
+            "code_res": code,
+            "libelle_res": res["libelle_res"],
+            "unite_res": res["unite_res"],
+            "pu_res": res["pu_res"],
+            "date_prix": res.get("date_prix"),
+            "source": res.get("source"),
+            "age": age,
+            "ancien": age is not None and age >= PRIX_ANCIEN_JOURS,
+            "quantite": round(quantite, 4),
+            "montant": round(montant, 2),
+            "part": round(montant / achats, 4),
+        })
+    return sorted(materiaux, key=lambda m: -m["montant"])
+
+
+def mois(jours):
+    """Un âge en jours dit en mois — la façon dont on en parle vraiment."""
+    return max(1, round(jours / 30.44))
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 7. Calibration sur les devis historiques
 # ═══════════════════════════════════════════════════════════════════════════
 
 
@@ -792,7 +907,7 @@ def imprimer_calibration(cal=None, params=None, tables=None):
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# 7. Contrôle de cohérence de la bibliothèque
+# 8. Contrôle de cohérence de la bibliothèque
 # ═══════════════════════════════════════════════════════════════════════════
 
 

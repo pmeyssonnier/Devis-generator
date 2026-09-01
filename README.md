@@ -720,6 +720,49 @@ l'interface, le contrôle des prix et l'export Excel y lisent la même
 chose. Deux définitions de « validé » finiraient par diverger, et un
 poste passerait pour sûr d'un côté et douteux de l'autre.
 
+#### D'où vient un prix d'achat, et de quand
+
+Un rendement se **valide** sur des chantiers ; un prix d'achat, lui, ne
+se valide pas — il **périme**. Il était juste le jour où on l'a relevé,
+et il vieillit tout seul, sans que rien ne le dise. C'est le risque
+symétrique de celui des rendements, et le seul qui échappe entièrement à
+l'entreprise : elle ne décide pas du tarif de son fournisseur.
+
+Deux champs **facultatifs** sur une ressource répondent à la question :
+
+```json
+{
+  "code_res": "MA.12", "libelle_res": "Enduit de façade",
+  "type_res": "MAT", "unite_res": "sac", "pu_res": 18.50,
+  "date_prix": "2026-03-12",
+  "source": "offre Fournisseur X du 12/03"
+}
+```
+
+Facultatifs pour de bon : aucune ressource n'en porte aujourd'hui, et
+les exiger refuserait de démarrer sur une bibliothèque parfaitement
+utilisable. Mais une date **présente et illisible** reste une faute au
+chargement — c'est une corruption, pas une absence, et une date
+illisible qu'on laisserait passer se lirait « prix jamais daté »,
+c'est-à-dire l'inverse de ce qu'elle voulait dire.
+
+Le principe qui tient tout le reste : **l'absence de date ne vaut pas
+fraîcheur.** Un prix non daté est d'origine inconnue, ce qui se compte
+à part et ne se confond jamais avec un prix récent. Compter zéro ferait
+passer la bibliothèque d'aujourd'hui — entièrement non datée — pour une
+bibliothèque parfaitement à jour.
+
+Les dates n'arrivent donc pas d'un import : elles se posent **une à la
+fois**, en corrigeant un prix dans l'atelier, avec la date de l'offre
+reçue (pas celle de la saisie : une offre de mars encodée en août reste
+un prix de mars) et d'où elle vient. Reconfirmer un prix inchangé après
+un coup de fil est le geste le plus fréquent, et il compte comme une
+correction — sans quoi la date serait perdue au rafraîchissement suivant.
+
+En revanche, un clic par réflexe ne date rien : sans prix modifié ni
+provenance écrite, rien ne s'enregistre. **Une fausse fraîcheur serait
+pire que pas de date du tout** — elle se lirait comme une garantie.
+
 **Créer un ouvrage absent** se fait au même endroit. Un ouvrage ne se
 résume pas à un prix : il lui faut un code, une **unité** — sans elle
 le contrôle d'unité devient inopérant — et surtout une
@@ -865,6 +908,31 @@ S'y ajoutent les alertes par poste — poids dans l'offre, prix dominé
 par le rendement (donc par une estimation) ou par un prix d'achat
 (donc par un fournisseur), écart à un marché antérieur, et part du
 montant reposant sur des rendements jamais validés.
+
+**L'âge des prix d'achat** s'y lit aussi, et seulement pour les
+matériaux que **cette offre-ci** consomme : la bibliothèque en compte
+trente-cinq, une offre en utilise une poignée. Les signaler tous, c'est
+se faire ignorer ; dire lesquels des quatre qui pèsent ici reposent sur
+un prix de l'an dernier est une question qui a une réponse — et un coup
+de fil au fournisseur avant de déposer, car **un marché public ne se
+renégocie pas**. Les montants sont des **déboursés** (ce que le
+fournisseur facturera), pas des prix de vente : c'est l'exposition
+réelle au tarif.
+
+Deux mesures et deux niveaux, exactement comme pour les rendements :
+
+| Mesure | Niveau | Pourquoi |
+|---|---|---|
+| Achats dont le **prix a plus de six mois** | **attention** | une offre fournisseur ordinaire ne s'engage pas au-delà |
+| Achats dont on **ignore la date** | **info** | l'état ordinaire aujourd'hui — une alerte qui se déclenche sur chaque offre ne dit plus rien |
+
+Et rien ne se déclenche quand les matériaux ne font pas le prix : sous
+5 % du total, les dater n'apprendrait rien et le dire ferait du bruit
+pour rien.
+
+**L'outil signale, il ne corrige rien.** Réindexer automatiquement des
+prix d'achat sur un indice, ce serait fabriquer des chiffres que
+personne n'a vus — et les déposer sous la signature de l'entreprise.
 
 Le module ne fait **que de l'arithmétique**, délibérément : un
 contrôle de prix doit être vérifiable à la main, pas cru sur parole.
@@ -1023,6 +1091,11 @@ ouvrages `OUVRAGES_A_VALIDER` — dont les rendements restent à confirmer.
       **0 sur 49** est confronté au réel — c'est le vrai état de la
       bibliothèque, et l'atelier sait maintenant l'établir chantier après
       chantier plutôt que sur déclaration
+- [ ] **Dater les prix d'achat**, un fournisseur à la fois. Aucun des
+      35 matériaux ne porte de date : l'outil dit donc qu'il ne sait pas,
+      ce qui est vrai, et les dates viendront d'elles-mêmes à mesure des
+      offres reçues — en commençant par les matériaux qui pèsent dans les
+      offres en cours, que le contrôle des prix liste maintenant
 - [ ] Remplir `code_ref` avec les vraies références CCT (CCT 2022 Bruxelles /
       CCT-B Qualiroute / SB 250) au premier cahier des charges reçu
 - [ ] Envisager une bascule vers une base (Oracle/PL-SQL) si la bibliothèque
@@ -1037,7 +1110,7 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-288 tests. Ceux de la chaîne Excel se skippent sans openpyxl, ceux de
+309 tests. Ceux de la chaîne Excel se skippent sans openpyxl, ceux de
 l'interface sans streamlit. L'écriture GitHub est testée avec un
 dépôt simulé — la suite ne touche jamais au réseau.
 
